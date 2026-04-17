@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app.api.routes import pdf
 
 app = FastAPI(
     title="AI 导师系统 API",
@@ -15,6 +16,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routes
+app.include_router(pdf.router, prefix=settings.API_PREFIX)
 
 @app.get("/health")
 async def health_check():
