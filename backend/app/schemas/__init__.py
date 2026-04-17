@@ -12,6 +12,17 @@ from app.schemas.graph import (
     NodeType,
     RelationType
 )
+from app.schemas.tutor import (
+    TutorMessage,
+    TutorRequest,
+    TutorResponse,
+    QuizRequest,
+    QuizResponse,
+    ProblemSolvingRequest,
+    ProblemSolvingResponse,
+    MessageType,
+    TutorMode
+)
 
 __all__ = [
     "PDFUploadResponse",
@@ -25,4 +36,13 @@ __all__ = [
     "GraphTraversalRequest",
     "NodeType",
     "RelationType",
+    "TutorMessage",
+    "TutorRequest",
+    "TutorResponse",
+    "QuizRequest",
+    "QuizResponse",
+    "ProblemSolvingRequest",
+    "ProblemSolvingResponse",
+    "MessageType",
+    "TutorMode",
 ]
