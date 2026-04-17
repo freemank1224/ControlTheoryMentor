@@ -1,4 +1,4 @@
-# Multi-stage build for background worker
+# Multi-stage build for backend API
 # Stage 1: Builder
 FROM python:3.11-slim as builder
 
@@ -19,7 +19,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Install runtime dependencies only
 RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -31,27 +31,27 @@ COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
 # Copy application code
-COPY ./celery_app.py .
-COPY ./tasks ./tasks
+COPY ./app ./app
 
-# Create directory for PDF processing
+# Create directory for PDF storage
 RUN mkdir -p /app/pdfs
 
-# Create non-root user for running the worker
-RUN useradd -m -u 1000 worker && \
-    chown -R worker:worker /app
+# Create non-root user for running the application
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
 
-USER worker
+USER appuser
 
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV CELERY_BROKER_URL=redis://redis:6379/0
-ENV CELERY_RESULT_BACKEND=redis://redis:6379/0
 
-# Health check for Celery worker
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD celery -A celery_app inspect ping || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Run Celery worker
-CMD ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--pool=solo"]
+# Expose port
+EXPOSE 8000
+
+# Run the application
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
