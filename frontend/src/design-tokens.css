@@ -1,0 +1,14 @@
+:root {
+  --bg-parchment: #f5f4ed;
+  --bg-ivory: #faf9f5;
+  --bg-warm-sand: #e8e6dc;
+  --text-primary: #141413;
+  --text-secondary: #5e5d59;
+  --text-tertiary: #87867f;
+  --accent-terracotta: #c96442;
+  --accent-coral: #d97757;
+  --border-cream: #f0eee6;
+  --border-warm: #e8e6dc;
+  --card-radius: 12px;
+  --btn-radius: 8px;
+}
