@@ -7,6 +7,7 @@ from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pathlib import Path
+from celery import Celery
 
 from app.schemas.pdf import (
     PDFUploadResponse,
@@ -22,6 +23,15 @@ router = APIRouter(prefix="/pdf", tags=["PDF"])
 # In-memory storage for demo purposes
 pdf_storage = {}
 
+# Celery client for background task processing
+try:
+    celery_app = Celery('backend')
+    celery_app.config_from_object('worker.celery_app')
+    CELERY_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Celery integration not available: {e}")
+    CELERY_AVAILABLE = False
+
 
 @router.post("/upload", response_model=PDFUploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
@@ -29,7 +39,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     Upload a PDF file for processing
 
     - **file**: PDF file to upload
-    - Returns PDF metadata including ID and page count
+    - Returns PDF metadata including task ID for background processing
     """
     # Validate file type
     if not file.filename or not file.filename.lower().endswith('.pdf'):
@@ -45,6 +55,7 @@ async def upload_pdf(file: UploadFile = File(...)):
     pdf_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate unique ID
+    task_id = f"task-{uuid.uuid4()}"
     pdf_id = f"pdf-{uuid.uuid4()}"
 
     # Save file
@@ -58,17 +69,35 @@ async def upload_pdf(file: UploadFile = File(...)):
     # Store metadata
     pdf_storage[pdf_id] = {
         "id": pdf_id,
+        "task_id": task_id,
         "filename": file.filename,
         "page_count": page_count,
-        "status": PDFStatus.UPLOADED,
+        "status": PDFStatus.PROCESSING,
         "file_path": str(file_path)
     }
+
+    # Submit to Celery queue for background processing
+    if CELERY_AVAILABLE:
+        try:
+            from worker.tasks import process_pdf_task
+            process_pdf_task.delay(
+                task_id=task_id,
+                pdf_path=str(file_path),
+                neo4j_uri=settings.NEO4J_URI,
+                neo4j_user=settings.NEO4J_USER,
+                neo4j_password=settings.NEO4J_PASSWORD
+            )
+        except Exception as e:
+            print(f"Warning: Could not submit task to Celery: {e}")
+            # Continue anyway - file is saved
+    else:
+        print("Celery not available - PDF saved but processing not queued")
 
     return PDFUploadResponse(
         id=pdf_id,
         filename=file.filename,
         page_count=page_count,
-        status=PDFStatus.UPLOADED
+        status=PDFStatus.PROCESSING
     )
 
 
@@ -128,10 +157,28 @@ async def get_pdf_status(pdf_id: str):
     if pdf_id not in pdf_storage:
         raise HTTPException(status_code=404, detail="PDF not found")
 
-    return {
+    pdf_data = pdf_storage[pdf_id]
+    response = {
         "id": pdf_id,
-        "status": pdf_storage[pdf_id]["status"]
+        "status": pdf_data["status"]
     }
+
+    # Add task ID if available
+    if "task_id" in pdf_data:
+        response["task_id"] = pdf_data["task_id"]
+
+        # Check Celery task status if available
+        if CELERY_AVAILABLE:
+            try:
+                from celery.result import AsyncResult
+                task_result = AsyncResult(pdf_data["task_id"])
+                response["task_status"] = task_result.state
+                if task_result.info:
+                    response["task_info"] = task_result.info
+            except Exception as e:
+                print(f"Warning: Could not check task status: {e}")
+
+    return response
 
 
 @router.get("/", response_model=List[PDFUploadResponse])

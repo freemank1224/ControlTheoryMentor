@@ -1,7 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.routes import pdf, graph, tutor
+from app.api.websocket.handler import websocket_endpoint
 
 app = FastAPI(
     title="AI 导师系统 API",
@@ -21,6 +22,18 @@ app.add_middleware(
 app.include_router(pdf.router, prefix=settings.API_PREFIX)
 app.include_router(graph.router, prefix=settings.API_PREFIX)
 app.include_router(tutor.router, prefix=settings.API_PREFIX)
+
+# WebSocket endpoint for real-time task updates
+@app.websocket("/ws/graph/{task_id}")
+async def websocket_graph_updates(websocket: WebSocket, task_id: str):
+    """
+    WebSocket endpoint for real-time PDF processing updates
+
+    Args:
+        websocket: WebSocket connection instance
+        task_id: Task identifier to monitor
+    """
+    await websocket_endpoint(websocket, task_id)
 
 @app.get("/health")
 async def health_check():
