@@ -4,9 +4,16 @@ Unit tests for Tutor schema
 import pytest
 from pydantic import ValidationError
 from app.schemas.tutor import (
+    TeachingPlan,
+    TeachingStep,
+    TeachingStepType,
     TutorMessage,
     TutorRequest,
     TutorResponse,
+    TutorSessionRespondRequest,
+    TutorSessionResponse,
+    TutorSessionStartRequest,
+    TutorSessionStatus,
     MessageType,
     TutorMode
 )
@@ -121,3 +128,56 @@ class TestTutorResponse:
                 message="",
                 conversation_id="conv-123"
             )
+
+
+class TestTutorSessionSchemas:
+    """Test step-by-step tutor session schemas"""
+
+    def test_tutor_session_start_request_success(self):
+        """Start request should accept question and PDF identifier"""
+        request = TutorSessionStartRequest(
+            question="Explain PID controllers",
+            pdfId="graph-task-123",
+            mode="interactive"
+        )
+
+        assert request.question == "Explain PID controllers"
+        assert request.pdfId == "graph-task-123"
+        assert request.mode == TutorMode.INTERACTIVE
+
+    def test_tutor_session_respond_request_requires_response(self):
+        """Respond request should reject empty responses"""
+        with pytest.raises(ValidationError):
+            TutorSessionRespondRequest(response="")
+
+    def test_tutor_session_response_success(self):
+        """Session response should serialize plan and step state"""
+        step = TeachingStep(
+            id="step-1",
+            type=TeachingStepType.INTRO,
+            title="建立问题背景",
+            objective="明确学习目标",
+            content={"markdown": "先建立背景"}
+        )
+        plan = TeachingPlan(
+            summary="四步教学计划",
+            goals=["理解概念"],
+            steps=[step]
+        )
+
+        response = TutorSessionResponse(
+            sessionId="session-123",
+            plan=plan,
+            currentStep=step,
+            currentStepIndex=0,
+            status=TutorSessionStatus.IN_PROGRESS,
+            messages=[],
+            canAdvance=True,
+            needsUserResponse=False,
+            metadata={"pdfId": "graph-task-123"}
+        )
+
+        assert response.sessionId == "session-123"
+        assert response.currentStep.id == "step-1"
+        assert response.status == TutorSessionStatus.IN_PROGRESS
+        assert response.metadata["pdfId"] == "graph-task-123"

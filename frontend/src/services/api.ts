@@ -2,6 +2,7 @@ import type {
   PDFUploadResponse,
   PDFStatusResponse,
   GraphDataResponse,
+  TutorSessionRespondRequest,
   TutorSessionResponse,
   TutorSessionStart
 } from '../types/api';
@@ -64,6 +65,26 @@ class APIClient {
   // AI Tutor
   async startTutorSession(request: TutorSessionStart): Promise<TutorSessionResponse> {
     return this.request<TutorSessionResponse>('/api/tutor/session/start', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getTutorSession(sessionId: string): Promise<TutorSessionResponse> {
+    return this.request<TutorSessionResponse>(`/api/tutor/session/${sessionId}`);
+  }
+
+  async nextTutorSessionStep(sessionId: string): Promise<TutorSessionResponse> {
+    return this.request<TutorSessionResponse>(`/api/tutor/session/${sessionId}/next`, {
+      method: 'POST',
+    });
+  }
+
+  async respondToTutorSession(
+    sessionId: string,
+    request: TutorSessionRespondRequest,
+  ): Promise<TutorSessionResponse> {
+    return this.request<TutorSessionResponse>(`/api/tutor/session/${sessionId}/respond`, {
       method: 'POST',
       body: JSON.stringify(request),
     });

@@ -59,20 +59,45 @@ export interface TutorSessionStart {
   question: string;
   pdfId: string;
   mode?: string;
+  context?: Record<string, unknown>;
 }
 
 export interface TeachingStep {
   id: string;
   type: string;
   title: string;
-  content: any;
+  objective: string;
+  content: Record<string, unknown>;
+  relatedTopics?: string[];
+  requiresResponse?: boolean;
+}
+
+export interface TeachingPlan {
+  summary: string;
+  goals: string[];
+  steps: TeachingStep[];
+}
+
+export interface TutorSessionMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface TutorSessionRespondRequest {
+  response: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TutorSessionResponse {
   sessionId: string;
-  plan: {
-    steps: TeachingStep[];
-  };
-  currentStep?: string;
+  plan: TeachingPlan;
+  currentStep?: TeachingStep | null;
+  currentStepIndex: number;
   status: string;
+  messages: TutorSessionMessage[];
+  canAdvance: boolean;
+  needsUserResponse: boolean;
+  feedback?: string | null;
+  metadata?: Record<string, unknown>;
 }
