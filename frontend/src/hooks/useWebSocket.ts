@@ -8,7 +8,7 @@ interface UseWebSocketOptions {
 export function useWebSocket(url: string, options: UseWebSocketOptions = {}) {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     function connect() {
@@ -48,6 +48,7 @@ export function useWebSocket(url: string, options: UseWebSocketOptions = {}) {
     return () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
       if (wsRef.current) {
         wsRef.current.close();

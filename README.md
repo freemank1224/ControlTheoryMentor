@@ -1,6 +1,6 @@
 # ControlTheoryMentor - AI 导师系统
 
-基于知识图谱的个性化 AI 自学导师。
+基于知识图谱的个性化 AI 自学导师。当前 PDF 图谱流程已切换到上游 Graphify 0.4.21 的 detect / build / cluster / report / export 阶段，并通过真实 LLM 语义抽取驱动非代码语料。
 
 ## 快速开始
 
@@ -42,8 +42,28 @@ npm run dev
 ```bash
 cd worker
 pip install -r requirements.txt
-celery -A celery_app worker --loglevel=info
+celery -A worker.celery_app worker --loglevel=info
 ```
+
+## Graphify 运行时要求
+
+Worker 不再提供本地规则兜底抽取。处理 PDF、文档或图片时，必须配置真实的 Graphify 语义模型运行时；否则任务会直接失败，而不是生成伪图谱。
+
+支持的运行时变量:
+
+```bash
+GRAPHIFY_LLM_API_KEY=your-provider-key
+GRAPHIFY_LLM_MODEL=gpt-4.1-mini
+GRAPHIFY_LLM_BASE_URL=https://api.openai.com/v1
+GRAPHIFY_LLM_TIMEOUT_SECONDS=120
+GRAPHIFY_LLM_MAX_CHUNK_CHARS=50000
+GRAPHIFY_LLM_MAX_OUTPUT_TOKENS=4000
+```
+
+说明:
+- `GRAPHIFY_LLM_API_KEY` 也可用 `OPENAI_API_KEY` 代替。
+- `GRAPHIFY_LLM_MODEL` 也可用 `OPENAI_MODEL` 代替。
+- 代码-only 图谱仍可走 Graphify AST 抽取；但当前产品入口是 PDF 上传，所以默认需要 LLM 运行时。
 
 ## 项目结构
 
@@ -136,6 +156,11 @@ API_PREFIX=/api
 # Storage
 PDF_STORAGE_PATH=./pdfs
 MAX_PDF_PAGES=1200
+
+# Graphify semantic extraction
+GRAPHIFY_LLM_API_KEY=
+GRAPHIFY_LLM_MODEL=gpt-4.1-mini
+GRAPHIFY_LLM_BASE_URL=
 ```
 
 ## 部署
@@ -199,6 +224,11 @@ docker-compose logs -f frontend
 - Neo4j (图数据库)
 - Redis (缓存/消息队列)
 - Celery (异步任务)
+
+**知识图谱:**
+- Graphify 0.4.21
+- OpenAI 兼容 Chat Completions 语义抽取
+- Graphify JSON / HTML / Markdown / Cypher 导出
 
 **DevOps:**
 - Docker & Docker Compose

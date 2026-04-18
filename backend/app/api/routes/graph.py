@@ -2,8 +2,9 @@
 Graph API routes for knowledge graph operations
 """
 from typing import Dict, Any, List
+import json
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import JSONResponse
 
 from app.schemas.graph import (
     GraphNode,
@@ -15,14 +16,40 @@ from app.schemas.graph import (
     NodeType,
     RelationType
 )
+from app.config import settings
 
 router = APIRouter(prefix="/graph", tags=["Graph"])
 
-# In-memory storage for demo purposes
+# File-based storage for persistence
+GRAPH_DATA_DIR = Path(settings.GRAPH_ARTIFACTS_PATH)
+GRAPH_DATA_DIR.mkdir(exist_ok=True)
+
+def get_graph_file_path(graph_id: str) -> Path:
+    """Get the file path for a graph's data"""
+    return GRAPH_DATA_DIR / f"{graph_id}.json"
+
+def save_graph_data(graph_id: str, data: dict):
+    """Save graph data to file"""
+    file_path = get_graph_file_path(graph_id)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def load_graph_data(graph_id: str) -> dict:
+    """Load graph data from file"""
+    file_path = get_graph_file_path(graph_id)
+    if file_path.exists():
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {"nodes": {}, "edges": {}}
+
+# In-memory storage for demo purposes (legacy)
 graph_storage = {
     "nodes": {},
     "edges": {}
 }
+
+# Graph data storage by graph_id (legacy - use file-based now)
+graph_data_storage = {}
 
 
 @router.post("/create")
@@ -182,6 +209,79 @@ async def traverse_graph(request: GraphTraversalRequest):
             "nodes_visited": len(visited_nodes),
             "edges_visited": len(visited_edges)
         }
+    }
+
+
+@router.get("/{graph_id}")
+async def get_graph(graph_id: str):
+    """
+    Get a knowledge graph by ID
+
+    - **graph_id**: Graph identifier
+    - Returns graph data with nodes and edges
+    """
+    graph_json_path = GRAPH_DATA_DIR / graph_id / "graphify-out" / "graph.json"
+    if graph_json_path.exists():
+        with open(graph_json_path, "r", encoding="utf-8") as file_handle:
+            graph_data = json.load(file_handle)
+
+        nodes = []
+        for node in graph_data.get("nodes", []):
+            nodes.append({
+                "data": {
+                    "id": node["id"],
+                    "label": node.get("label", node["id"]),
+                    "type": node.get("file_type", "unknown"),
+                    "source_file": node.get("source_file", ""),
+                    "community": node.get("community"),
+                }
+            })
+
+        edges = []
+        for index, edge in enumerate(graph_data.get("links", []), start=1):
+            source = edge.get("_src", edge.get("source"))
+            target = edge.get("_tgt", edge.get("target"))
+            edges.append({
+                "data": {
+                    "id": edge.get("id", f"{source}-{edge.get('relation', 'related_to')}-{target}-{index}"),
+                    "source": source,
+                    "target": target,
+                    "label": edge.get("relation", "related_to"),
+                    "relation": edge.get("relation", "related_to"),
+                    "confidence": edge.get("confidence", "EXTRACTED"),
+                }
+            })
+
+        return {
+            "elements": {
+                "nodes": nodes,
+                "edges": edges,
+            },
+            "metadata": {
+                "graphId": graph_id,
+                "total_nodes": len(nodes),
+                "total_edges": len(edges),
+                "reportPath": str(graph_json_path.parent / "GRAPH_REPORT.md"),
+            },
+        }
+
+    # Fall back to legacy file format if no Graphify artifact exists.
+    graph_data = load_graph_data(graph_id)
+    if not graph_data.get("nodes") and not graph_data.get("edges"):
+        raise HTTPException(status_code=404, detail=f"Graph {graph_id} not found")
+
+    nodes_list = [{"data": node_data} for node_data in graph_data.get("nodes", {}).values()]
+    edges_list = [{"data": edge_data} for edge_data in graph_data.get("edges", {}).values()]
+    return {
+        "elements": {
+            "nodes": nodes_list,
+            "edges": edges_list,
+        },
+        "metadata": {
+            "graphId": graph_id,
+            "total_nodes": len(nodes_list),
+            "total_edges": len(edges_list),
+        },
     }
 
 

@@ -25,6 +25,7 @@ class ParseStatus(str, Enum):
 class PDFUploadResponse(BaseModel):
     """Response model for PDF upload"""
     id: str = Field(..., description="Unique PDF identifier")
+    taskId: str = Field(..., description="Task identifier for WebSocket tracking")
     filename: str = Field(..., description="Original filename")
     page_count: int = Field(..., ge=1, description="Number of pages in PDF")
     status: PDFStatus = Field(..., description="Upload status")

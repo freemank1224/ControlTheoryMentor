@@ -1,15 +1,14 @@
-"""
-WebSocket handler for real-time task status updates
-"""
+"""WebSocket handler for real-time Celery task updates."""
 from fastapi import WebSocket, WebSocketDisconnect
 from typing import Dict, Set
-import json
 import asyncio
 import logging
-from redis import Redis
-from app.config import settings
+from celery.result import AsyncResult
+
+from app.celery_client import get_celery_app
 
 logger = logging.getLogger(__name__)
+celery_app = get_celery_app()
 
 
 class ConnectionManager:
@@ -20,12 +19,6 @@ class ConnectionManager:
     def __init__(self):
         # Store active connections by task_id
         self.active_connections: Dict[str, Set[WebSocket]] = {}
-        self.redis_client = None
-
-        try:
-            self.redis_client = Redis.from_url(settings.REDIS_URL)
-        except Exception as e:
-            logger.warning(f"Redis connection failed: {e}")
 
     async def connect(self, websocket: WebSocket, task_id: str):
         """
@@ -106,72 +99,82 @@ class ConnectionManager:
 
     async def monitor_task_status(self, task_id: str):
         """
-        Monitor task status and push updates via Redis
+        Monitor a Celery task and stream real progress updates.
 
         Args:
             task_id: Task identifier to monitor
         """
-        if not self.redis_client:
-            logger.warning("Redis not available - cannot monitor task status")
-            return
+        try:
+            logger.info(f"Starting task monitoring for {task_id}")
+            task_result = AsyncResult(task_id, app=celery_app)
+            last_snapshot = None
 
-        last_status = None
+            while True:
+                state = task_result.state
+                payload = None
 
-        while task_id in self.active_connections:
-            try:
-                # Check task status in Redis
-                status_key = f"celery-task-meta-{task_id}"
-                task_data = self.redis_client.get(status_key)
+                if state == "PENDING":
+                    payload = {
+                        "type": "task.progress",
+                        "data": {
+                            "taskId": task_id,
+                            "percent": 0,
+                            "message": "任务已入队，等待 Worker 处理...",
+                        },
+                    }
+                elif state in {"STARTED", "PROGRESS", "RETRY"}:
+                    info = task_result.info if isinstance(task_result.info, dict) else {}
+                    payload = {
+                        "type": "task.progress",
+                        "data": {
+                            "taskId": task_id,
+                            "percent": int(info.get("percent", 5 if state == "STARTED" else 0)),
+                            "message": info.get("message", "Graphify 正在处理文档..."),
+                            "status": info.get("status", state.lower()),
+                        },
+                    }
+                elif state == "SUCCESS":
+                    result = task_result.result if isinstance(task_result.result, dict) else {}
+                    await self.broadcast(
+                        task_id,
+                        "task.completed",
+                        {
+                            "taskId": task_id,
+                            "graphId": result.get("graph_id", task_id),
+                            "message": result.get("message", "Graphify 处理完成"),
+                            "result": result.get("result", {}),
+                        },
+                    )
+                    logger.info(f"Task monitoring completed for {task_id}")
+                    return
+                elif state == "FAILURE":
+                    await self.broadcast(
+                        task_id,
+                        "task.failed",
+                        {
+                            "taskId": task_id,
+                            "error": str(task_result.result),
+                        },
+                    )
+                    return
 
-                if task_data:
-                    try:
-                        task_info = json.loads(task_data)
-                        current_status = task_info.get("status")
+                if payload and payload != last_snapshot:
+                    await self.send_update(task_id, payload)
+                    last_snapshot = payload
 
-                        # Send update if status changed
-                        if current_status != last_status:
-                            if current_status == "PROGRESS":
-                                await self.broadcast(
-                                    task_id,
-                                    "task.progress",
-                                    {
-                                        "percent": task_info.get("result", {}).get("percent", 0),
-                                        "message": task_info.get("result", {}).get("message", ""),
-                                        "task_id": task_id
-                                    }
-                                )
-                            elif current_status == "SUCCESS":
-                                await self.broadcast(
-                                    task_id,
-                                    "task.completed",
-                                    {
-                                        "task_id": task_id,
-                                        "graph_id": task_info.get("result", {}).get("graph_id", task_id)
-                                    }
-                                )
-                                break  # Exit loop on completion
-                            elif current_status == "FAILURE":
-                                await self.broadcast(
-                                    task_id,
-                                    "task.failed",
-                                    {
-                                        "task_id": task_id,
-                                        "error": str(task_info.get("result", "Unknown error"))
-                                    }
-                                )
-                                break  # Exit loop on failure
-
-                            last_status = current_status
-
-                    except json.JSONDecodeError:
-                        logger.warning(f"Invalid JSON in task data for {task_id}")
-
-                # Wait before next check
                 await asyncio.sleep(1)
+                task_result = AsyncResult(task_id, app=celery_app)
 
-            except Exception as e:
-                logger.error(f"Error monitoring task {task_id}: {e}")
-                await asyncio.sleep(2)  # Wait before retry
+        except Exception as e:
+            logger.error(f"Error in monitor_task_status for {task_id}: {e}")
+            await self.broadcast(
+                task_id,
+                "task.failed",
+                {
+                    "taskId": task_id,
+                    "error": str(e),
+                },
+            )
 
 
 # Global connection manager instance

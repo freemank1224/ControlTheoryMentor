@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 .venv/
 venv/
+.graphify_download/
 
 # Node
 node_modules/

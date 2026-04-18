@@ -148,45 +148,45 @@ ws.onmessage = (event) => {
 ## Graphify 封装说明
 
 ### 当前实现
-- **Mock 实现**: 使用 pypdf + 正则表达式提取
-- **概念提取**: 基于关键词匹配（控制理论相关术语）
-- **关系提取**: 基于共现分析（同一段落中的概念）
-- **公式提取**: 基于模式匹配
+- **上游对齐实现**: 使用 Graphify 0.4.21 的 detect / build / cluster / analyze / report / export 流程
+- **语义抽取**: 对 PDF、文档、图片使用真实 LLM 语义抽取，并写出 `.graphify_detect.json`、`.graphify_ast.json`、`.graphify_semantic.json`、`.graphify_extract.json`
+- **代码抽取**: 对 code 文件继续使用 Graphify 官方 AST 抽取
+- **失败策略**: 不再提供本地规则兜底；缺少或错误的 provider 配置会直接失败
 
 ### 接口定义
 ```python
 class GraphifyProcessor:
-    def __init__(self, neo4j_uri, neo4j_user, neo4j_password)
-    def process_pdf(self, pdf_path, pdf_id) -> Dict[str, Any]
+  def __init__(self, neo4j_uri, neo4j_user, neo4j_password, artifacts_root=None, llm_config=None)
+  def process_pdf(self, pdf_path, graph_id, progress_callback=None) -> Dict[str, Any]
     def close()
-
-def extract_entities_from_text(text: str) -> Dict[str, Any]
 ```
 
-### 替换方案
-当真实的 Graphify 库可用时：
-```python
-# 替换 worker/graphify_wrapper.py 中的实现
-from graphify import PDFProcessor
-
-class GraphifyProcessor:
-    def __init__(self, neo4j_uri, neo4j_user, neo4j_password):
-        self.pdf_processor = PDFProcessor()
-        # ... 其余代码保持不变
+### 运行时要求
+```bash
+GRAPHIFY_LLM_API_KEY=...
+GRAPHIFY_LLM_MODEL=gpt-4.1-mini
+GRAPHIFY_LLM_BASE_URL=
+GRAPHIFY_LLM_TIMEOUT_SECONDS=120
+GRAPHIFY_LLM_MAX_CHUNK_CHARS=50000
+GRAPHIFY_LLM_MAX_OUTPUT_TOKENS=4000
 ```
+
+说明:
+- `GRAPHIFY_LLM_API_KEY` 可由 `OPENAI_API_KEY` 代替。
+- `GRAPHIFY_LLM_MODEL` 可由 `OPENAI_MODEL` 代替。
+- Worker 任务只保留 `process_pdf_task`、`health_check_task`、`cleanup_old_tasks`。
 
 ## 测试覆盖
 
 ### 单元测试
-- ✅ GraphifyProcessor 初始化
-- ✅ 实体提取功能
-- ✅ PDF 处理流程
-- ✅ Neo4j 保存操作
+- ✅ LLM 配置校验
+- ✅ 抽取结果合并去重
+- ✅ PDF 产物写出流程
 
 ### 任务测试
 - ✅ process_pdf_task 结构
-- ✅ generate_graph_task 结构
 - ✅ health_check_task
+- ✅ 非可重试配置错误
 - ✅ 错误处理和重试逻辑
 
 ### 运行测试

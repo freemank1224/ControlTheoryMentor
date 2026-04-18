@@ -1,13 +1,9 @@
-"""
-PDF API routes for handling PDF upload, parsing, and retrieval
-"""
-import os
+"""PDF API routes for upload and background Graphify processing."""
 import uuid
 from typing import List
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from fastapi.responses import JSONResponse
 from pathlib import Path
-from celery import Celery
+from celery.result import AsyncResult
 
 from app.schemas.pdf import (
     PDFUploadResponse,
@@ -17,20 +13,24 @@ from app.schemas.pdf import (
     ParseStatus
 )
 from app.config import settings
+from app.celery_client import get_celery_app, TASK_PROCESS_PDF
 
 router = APIRouter(prefix="/pdf", tags=["PDF"])
 
 # In-memory storage for demo purposes
 pdf_storage = {}
 
-# Celery client for background task processing
-try:
-    celery_app = Celery('backend')
-    celery_app.config_from_object('worker.celery_app')
-    CELERY_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: Celery integration not available: {e}")
-    CELERY_AVAILABLE = False
+celery_app = get_celery_app()
+
+
+def _map_task_state(task_result: AsyncResult) -> PDFStatus:
+    if task_result.state == "SUCCESS":
+        return PDFStatus.COMPLETED
+    if task_result.state in {"PROGRESS", "STARTED", "RETRY"}:
+        return PDFStatus.PARSING
+    if task_result.state == "FAILURE":
+        return PDFStatus.FAILED
+    return PDFStatus.UPLOADED
 
 
 @router.post("/upload", response_model=PDFUploadResponse)
@@ -63,8 +63,8 @@ async def upload_pdf(file: UploadFile = File(...)):
     with open(file_path, "wb") as f:
         f.write(content)
 
-    # Mock page count (in real implementation, would use PyPDF2)
-    page_count = 42
+    # Page count is resolved during worker-side Graphify processing.
+    page_count = 1
 
     # Store metadata
     pdf_storage[pdf_id] = {
@@ -72,32 +72,37 @@ async def upload_pdf(file: UploadFile = File(...)):
         "task_id": task_id,
         "filename": file.filename,
         "page_count": page_count,
-        "status": PDFStatus.PROCESSING,
+        "status": PDFStatus.UPLOADED,
         "file_path": str(file_path)
     }
 
-    # Submit to Celery queue for background processing
-    if CELERY_AVAILABLE:
-        try:
-            from worker.tasks import process_pdf_task
-            process_pdf_task.delay(
-                task_id=task_id,
-                pdf_path=str(file_path),
-                neo4j_uri=settings.NEO4J_URI,
-                neo4j_user=settings.NEO4J_USER,
-                neo4j_password=settings.NEO4J_PASSWORD
-            )
-        except Exception as e:
-            print(f"Warning: Could not submit task to Celery: {e}")
-            # Continue anyway - file is saved
-    else:
-        print("Celery not available - PDF saved but processing not queued")
+    try:
+        celery_app.send_task(
+            TASK_PROCESS_PDF,
+            kwargs={
+                "task_id": task_id,
+                "pdf_path": str(file_path),
+                "neo4j_uri": settings.NEO4J_URI,
+                "neo4j_user": settings.NEO4J_USER,
+                "neo4j_password": settings.NEO4J_PASSWORD,
+            },
+            task_id=task_id,
+        )
+    except Exception as exc:
+        if file_path.exists():
+            file_path.unlink()
+        pdf_storage.pop(pdf_id, None)
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to enqueue Graphify processing task: {exc}",
+        ) from exc
 
     return PDFUploadResponse(
         id=pdf_id,
+        taskId=task_id,
         filename=file.filename,
         page_count=page_count,
-        status=PDFStatus.PROCESSING
+        status=PDFStatus.UPLOADED
     )
 
 
@@ -166,17 +171,18 @@ async def get_pdf_status(pdf_id: str):
     # Add task ID if available
     if "task_id" in pdf_data:
         response["task_id"] = pdf_data["task_id"]
-
-        # Check Celery task status if available
-        if CELERY_AVAILABLE:
-            try:
-                from celery.result import AsyncResult
-                task_result = AsyncResult(pdf_data["task_id"])
-                response["task_status"] = task_result.state
-                if task_result.info:
-                    response["task_info"] = task_result.info
-            except Exception as e:
-                print(f"Warning: Could not check task status: {e}")
+        try:
+            task_result = AsyncResult(pdf_data["task_id"], app=celery_app)
+            response["task_status"] = task_result.state
+            response["status"] = _map_task_state(task_result)
+            pdf_data["status"] = response["status"]
+            if task_result.state == "SUCCESS" and isinstance(task_result.result, dict):
+                response["graph_id"] = task_result.result.get("graph_id")
+                response["task_info"] = task_result.result
+            elif task_result.info:
+                response["task_info"] = task_result.info
+        except Exception as exc:
+            response["task_error"] = str(exc)
 
     return response
 

@@ -1,109 +1,313 @@
-"""
-Tests for Graphify wrapper
-"""
+"""Tests for the Graphify worker orchestration layer."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
-from unittest.mock import Mock, patch
-from worker.graphify_wrapper import GraphifyProcessor, extract_entities_from_text
+
+from worker.graphify_wrapper import GraphifyConfigurationError, GraphifyProcessor, LLMConfig
 
 
-class TestGraphifyProcessor:
-    """Test GraphifyProcessor initialization and basic operations"""
+def test_llm_config_requires_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GRAPHIFY_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GRAPHIFY_LLM_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
 
-    def test_processor_init(self):
-        """Test GraphifyProcessor initialization"""
-        with patch('worker.graphify_wrapper.GraphDatabase.driver'):
-            processor = GraphifyProcessor(
-                neo4j_uri="bolt://localhost:7687",
-                neo4j_user="neo4j",
-                neo4j_password="password"
-            )
-            assert processor is not None
-            assert processor.neo4j_uri == "bolt://localhost:7687"
-
-    def test_processor_init_with_defaults(self):
-        """Test GraphifyProcessor initialization with default values"""
-        with patch('worker.graphify_wrapper.GraphDatabase.driver'):
-            processor = GraphifyProcessor()
-            assert processor is not None
-            assert processor.neo4j_user == "neo4j"
-            assert processor.neo4j_password == "password"
+    with pytest.raises(GraphifyConfigurationError):
+        LLMConfig.from_env()
 
 
-class TestEntityExtraction:
-    """Test entity extraction from text"""
-
-    def test_extract_concepts_basic(self):
-        """Test basic concept extraction"""
-        text = "二阶系统是控制理论中的重要概念。传递函数描述系统特性。"
-        entities = extract_entities_from_text(text)
-
-        assert "concepts" in entities
-        assert isinstance(entities["concepts"], list)
-        assert len(entities["concepts"]) > 0
-
-    def test_extract_formulas(self):
-        """Test formula extraction"""
-        text = "二阶系统传递函数为 G(s) = ωn²/(s² + 2ζωns + ωn²)"
-        entities = extract_entities_from_text(text)
-
-        assert "formulas" in entities
-        assert isinstance(entities["formulas"], list)
-
-    def test_extract_relations(self):
-        """Test relationship extraction"""
-        text = "二阶系统依赖于阻尼比ζ和自然频率ωn。"
-        entities = extract_entities_from_text(text)
-
-        assert "relations" in entities
-        assert isinstance(entities["relations"], list)
-
-
-class TestPDFProcessing:
-    """Test PDF processing workflow"""
-
-    @pytest.fixture
-    def mock_processor(self):
-        """Create a mock processor for testing"""
-        with patch('worker.graphify_wrapper.GraphDatabase.driver') as mock_driver:
-            processor = GraphifyProcessor(
-                neo4j_uri="bolt://localhost:7687",
-                neo4j_user="neo4j",
-                neo4j_password="password"
-            )
-            # Mock session
-            mock_session = Mock()
-            mock_driver.return_value.session.return_value.__enter__ = Mock(return_value=mock_session)
-            mock_driver.return_value.session.return_value.__exit__ = Mock(return_value=False)
-            processor.driver = mock_driver
-            return processor
-
-    def test_process_pdf_structure(self, mock_processor):
-        """Test that process_pdf returns correct structure"""
-        result = mock_processor.process_pdf(
-            pdf_path="/fake/path/test.pdf",
-            pdf_id="test-pdf-123"
-        )
-
-        assert "nodes" in result
-        assert "edges" in result
-        assert "metadata" in result
-        assert isinstance(result["nodes"], list)
-        assert isinstance(result["edges"], list)
-
-    def test_save_to_neo4j_structure(self, mock_processor):
-        """Test that Neo4j save operation has correct structure"""
-        result = {
+def test_merge_extractions_deduplicates_nodes_and_edges() -> None:
+    processor = GraphifyProcessor(neo4j_uri="", neo4j_user="", neo4j_password="")
+    merged = processor._merge_extractions(
+        {
+            "nodes": [{"id": "n1", "label": "A", "file_type": "paper", "source_file": "raw/a.pdf"}],
+            "edges": [
+                {
+                    "source": "n1",
+                    "target": "n2",
+                    "relation": "mentions",
+                    "confidence": "EXTRACTED",
+                    "confidence_score": 1.0,
+                    "source_file": "raw/a.pdf",
+                    "source_location": "P1",
+                    "weight": 1.0,
+                }
+            ],
+            "hyperedges": [],
+            "input_tokens": 10,
+            "output_tokens": 20,
+        },
+        {
             "nodes": [
-                {"id": "c1", "name": "二阶系统", "type": "concept", "description": "测试描述"}
+                {"id": "n1", "label": "A updated", "file_type": "paper", "source_file": "raw/a.pdf"},
+                {"id": "n2", "label": "B", "file_type": "paper", "source_file": "raw/a.pdf"},
             ],
             "edges": [
-                {"source": "c1", "target": "c2", "type": "RELATED_TO"}
-            ]
+                {
+                    "source": "n1",
+                    "target": "n2",
+                    "relation": "mentions",
+                    "confidence": "EXTRACTED",
+                    "confidence_score": 1.0,
+                    "source_file": "raw/a.pdf",
+                    "source_location": "P1",
+                    "weight": 1.0,
+                }
+            ],
+            "hyperedges": [{"id": "h1", "label": "Group", "nodes": ["n1", "n2", "n3"]}],
+            "input_tokens": 5,
+            "output_tokens": 15,
+        },
+    )
+
+    assert len(merged["nodes"]) == 2
+    assert len(merged["edges"]) == 1
+    assert merged["input_tokens"] == 15
+    assert merged["output_tokens"] == 35
+    assert next(node for node in merged["nodes"] if node["id"] == "n1")["label"] == "A updated"
+
+
+def test_run_semantic_completion_supports_anthropic_compatible_endpoints() -> None:
+    processor = GraphifyProcessor(
+        neo4j_uri="",
+        neo4j_user="",
+        neo4j_password="",
+        llm_config=LLMConfig(
+            api_key="test-key",
+            model="MiniMax-M2.7",
+            base_url="https://api.minimaxi.com/anthropic",
+            timeout_seconds=30,
+            max_chunk_chars=1000,
+            max_output_tokens=500,
+        ),
+    )
+
+    class FakeHttpxClient:
+        def post(self, url: str, headers: dict[str, str], json: dict[str, object]):
+            assert url == "https://api.minimaxi.com/anthropic/v1/messages"
+            assert headers["x-api-key"] == "test-key"
+            assert json["model"] == "MiniMax-M2.7"
+            assert json["thinking"] == {"type": "disabled"}
+            return SimpleNamespace(
+                raise_for_status=lambda: None,
+                json=lambda: {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": json_module.dumps(
+                                {
+                                    "nodes": [
+                                        {
+                                            "id": "paper_1",
+                                            "label": "Control System",
+                                            "file_type": "paper",
+                                        },
+                                        {
+                                            "id": "concept_1",
+                                            "label": "State Space",
+                                            "file_type": "paper",
+                                        },
+                                    ],
+                                    "edges": [
+                                        {
+                                            "source": "paper_1",
+                                            "target": "concept_1",
+                                            "relation": "mentions",
+                                            "confidence": "EXTRACTED",
+                                            "confidence_score": 1.0,
+                                        }
+                                    ],
+                                    "hyperedges": [],
+                                }
+                            ),
+                        }
+                    ],
+                    "usage": {"input_tokens": 12, "output_tokens": 8},
+                },
+            )
+
+    json_module = json
+    processor._client = FakeHttpxClient()
+
+    extraction = processor._run_semantic_completion(
+        "Return JSON",
+        source_file="raw/sample.pdf",
+        file_type="paper",
+        source_location="P1",
+        node_metadata={},
+    )
+
+    assert extraction["input_tokens"] == 12
+    assert extraction["output_tokens"] == 8
+    assert len(extraction["nodes"]) == 2
+    assert extraction["edges"][0]["relation"] == "mentions"
+
+
+def test_run_semantic_completion_repairs_anthropic_thinking_only_response() -> None:
+    processor = GraphifyProcessor(
+        neo4j_uri="",
+        neo4j_user="",
+        neo4j_password="",
+        llm_config=LLMConfig(
+            api_key="test-key",
+            model="MiniMax-M2.7",
+            base_url="https://api.minimaxi.com/anthropic",
+            timeout_seconds=30,
+            max_chunk_chars=1000,
+            max_output_tokens=500,
+        ),
+    )
+
+    responses = [
+        {
+            "content": [
+                {
+                    "type": "thinking",
+                    "thinking": "Nodes: Control System, State Space. Edge: Control System mentions State Space.",
+                }
+            ],
+            "usage": {"input_tokens": 10, "output_tokens": 20},
+        },
+        {
+            "content": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "nodes": [
+                                {"id": "paper_1", "label": "Control System", "file_type": "paper"},
+                                {"id": "concept_1", "label": "State Space", "file_type": "paper"},
+                            ],
+                            "edges": [
+                                {
+                                    "source": "paper_1",
+                                    "target": "concept_1",
+                                    "relation": "mentions",
+                                    "confidence": "EXTRACTED",
+                                    "confidence_score": 1.0,
+                                }
+                            ],
+                            "hyperedges": [],
+                        }
+                    ),
+                }
+            ],
+            "usage": {"input_tokens": 5, "output_tokens": 7},
+        },
+    ]
+
+    class FakeHttpxClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def post(self, url: str, headers: dict[str, str], json: dict[str, object]):
+            self.calls.append(json)
+            payload = responses[len(self.calls) - 1]
+            return SimpleNamespace(
+                raise_for_status=lambda: None,
+                json=lambda payload=payload: payload,
+            )
+
+    fake_client = FakeHttpxClient()
+    processor._client = fake_client
+
+    extraction = processor._run_semantic_completion(
+        "Return JSON",
+        source_file="raw/sample.pdf",
+        file_type="paper",
+        source_location="P1",
+        node_metadata={},
+    )
+
+    assert len(fake_client.calls) == 2
+    assert "previous reply did not include a final JSON text block" in fake_client.calls[1]["messages"][0]["content"][0]["text"]
+    assert extraction["input_tokens"] == 15
+    assert extraction["output_tokens"] == 27
+    assert len(extraction["nodes"]) == 2
+
+
+def test_process_pdf_builds_artifacts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%mock\n")
+
+    processor = GraphifyProcessor(
+        neo4j_uri="",
+        neo4j_user="",
+        neo4j_password="",
+        artifacts_root=str(tmp_path / "artifacts"),
+        llm_config=LLMConfig(
+            api_key="test-key",
+            model="test-model",
+            base_url=None,
+            timeout_seconds=30,
+            max_chunk_chars=1000,
+            max_output_tokens=500,
+        ),
+    )
+
+    def fake_detect(graph_root: Path) -> dict[str, object]:
+        staged = graph_root / "raw" / "sample.pdf"
+        return {
+            "files": {"code": [], "document": [], "paper": [str(staged)], "image": []},
+            "total_files": 1,
+            "total_words": 120,
         }
 
-        # This should not raise an error
-        mock_processor._save_to_neo4j(
-            session=mock_processor.driver.session(),
-            result=result,
-            pdf_id="test-pdf-123"
-        )
+    monkeypatch.setattr("worker.graphify_wrapper.detect", fake_detect)
+    monkeypatch.setattr(
+        processor,
+        "_extract_code_files",
+        lambda detection_result: {"nodes": [], "edges": [], "hyperedges": [], "input_tokens": 0, "output_tokens": 0},
+    )
+    monkeypatch.setattr(
+        processor,
+        "_extract_semantic_files",
+        lambda detection_result, graph_root, progress: (
+            {
+                "nodes": [
+                    {"id": "paper_1", "label": "sample", "file_type": "paper", "source_file": "raw/sample.pdf", "source_location": "P1"},
+                    {"id": "concept_1", "label": "State Space", "file_type": "paper", "source_file": "raw/sample.pdf", "source_location": "P1"},
+                ],
+                "edges": [
+                    {
+                        "source": "paper_1",
+                        "target": "concept_1",
+                        "relation": "mentions",
+                        "confidence": "EXTRACTED",
+                        "confidence_score": 1.0,
+                        "source_file": "raw/sample.pdf",
+                        "source_location": "P1",
+                        "weight": 1.0,
+                    }
+                ],
+                "hyperedges": [],
+                "input_tokens": 11,
+                "output_tokens": 7,
+            },
+            {"hits": 0, "misses": 1},
+        ),
+    )
+    monkeypatch.setattr("worker.graphify_wrapper.cluster", lambda graph: {0: ["paper_1", "concept_1"]})
+    monkeypatch.setattr("worker.graphify_wrapper.score_all", lambda graph, communities: {0: 0.8})
+    monkeypatch.setattr("worker.graphify_wrapper.god_nodes", lambda graph: [{"label": "sample", "degree": 1}])
+    monkeypatch.setattr("worker.graphify_wrapper.surprising_connections", lambda graph, communities: [])
+    monkeypatch.setattr("worker.graphify_wrapper.suggest_questions", lambda graph, communities, labels: [])
+    monkeypatch.setattr(
+        "worker.graphify_wrapper.generate",
+        lambda graph, communities, cohesion, labels, god_nodes, surprises, detection, token_cost, root, suggested_questions=None: "# report\n",
+    )
+    monkeypatch.setattr("worker.graphify_wrapper.save_manifest", lambda files, path: Path(path).write_text(json.dumps(files), encoding="utf-8"))
+
+    result = processor.process_pdf(str(pdf_path), "graph-task-1")
+
+    assert result["nodes_count"] == 2
+    assert result["edges_count"] == 1
+    assert result["input_tokens"] == 11
+    assert result["output_tokens"] == 7
+    assert Path(result["graph_json_path"]).exists()
+    assert Path(result["report_path"]).exists()

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import cytoscape, { Core, ElementDefinition } from 'cytoscape';
-import type { GraphDataResponse } from '@/types/api';
+import type { GraphDataResponse } from '../../types/api';
 
 interface KnowledgeGraphProps {
   data: GraphDataResponse;

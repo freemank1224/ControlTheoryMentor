@@ -1,9 +1,24 @@
 import { useState, useRef, useEffect } from 'react';
-import { apiClient } from '@/services/api';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { apiClient } from '../../services/api';
 
 interface UploadCardProps {
   onUploadComplete?: (taskId: string, graphId: string) => void;
+}
+
+function resolveWebSocketUrl(taskId: string): string {
+  const explicitWsBase = import.meta.env.VITE_WS_BASE_URL;
+  if (explicitWsBase) {
+    return `${explicitWsBase.replace(/\/$/, '')}/ws/graph/${taskId}`;
+  }
+
+  const apiBase = import.meta.env.VITE_API_BASE_URL;
+  if (apiBase) {
+    const wsBase = apiBase.replace(/^http/, 'ws').replace(/\/$/, '');
+    return `${wsBase}/ws/graph/${taskId}`;
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws/graph/${taskId}`;
 }
 
 export function UploadCard({ onUploadComplete }: UploadCardProps) {
@@ -39,7 +54,8 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
   // Handle WebSocket connection separately
   useEffect(() => {
     if (taskId && uploading) {
-      const ws = new WebSocket(`ws://localhost:8000/ws/graph/${taskId}`);
+      const wsUrl = resolveWebSocketUrl(taskId);
+      const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         console.log('WebSocket connected');
@@ -55,7 +71,7 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
             setProgress(100);
             setMessage('处理完成！');
             setUploading(false);
-            onUploadComplete?.(taskId, data.data.graphId);
+            onUploadComplete?.(taskId, data.data.graphId || taskId);
           } else if (data.type === 'task.failed') {
             setMessage('处理失败：' + data.data.error);
             setUploading(false);

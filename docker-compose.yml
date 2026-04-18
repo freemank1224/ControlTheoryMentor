@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   neo4j:
     image: neo4j:5.15-community
@@ -7,55 +5,66 @@ services:
       NEO4J_AUTH: neo4j/password
       NEO4J_dbms_memory_heap_max__size: 2G
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "17474:7474"
+      - "17687:7687"
     volumes:
       - neo4j_data:/data
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
 
   backend:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "18000:8000"
+    env_file:
+      - .env
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: password
       REDIS_URL: redis://redis:6379/0
+      GRAPH_ARTIFACTS_PATH: /shared/graph_data
     depends_on:
       - neo4j
       - redis
     volumes:
       - ./backend:/app
-      - pdf_storage:/app/pdfs
+      - ./pdfs:/app/pdfs
+      - ./graph_data:/shared/graph_data
 
   worker:
     build: ./worker
+    env_file:
+      - .env
     environment:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: password
       REDIS_URL: redis://redis:6379/0
+      GRAPH_ARTIFACTS_PATH: /shared/graph_data
+      GRAPHIFY_LLM_API_KEY: ${GRAPHIFY_LLM_API_KEY:-}
+      GRAPHIFY_LLM_BASE_URL: ${GRAPHIFY_LLM_BASE_URL:-}
+      GRAPHIFY_LLM_MODEL: ${GRAPHIFY_LLM_MODEL:-gpt-4.1-mini}
+      GRAPHIFY_LLM_TIMEOUT_SECONDS: ${GRAPHIFY_LLM_TIMEOUT_SECONDS:-120}
+      GRAPHIFY_LLM_MAX_CHUNK_CHARS: ${GRAPHIFY_LLM_MAX_CHUNK_CHARS:-50000}
+      GRAPHIFY_LLM_MAX_OUTPUT_TOKENS: ${GRAPHIFY_LLM_MAX_OUTPUT_TOKENS:-4000}
     depends_on:
       - neo4j
       - redis
     volumes:
-      - ./worker:/app
-      - pdf_storage:/app/pdfs
+      - ./worker:/app/worker
+      - ./pdfs:/app/pdfs
+      - ./graph_data:/shared/graph_data
 
   frontend:
     build: ./frontend
     ports:
-      - "5173:5173"
-    environment:
-      VITE_API_BASE_URL: http://localhost:8000
-      VITE_WS_BASE_URL: ws://localhost:8000
+      - "5173:8080"
+    depends_on:
+      - backend
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -63,4 +72,3 @@ services:
 volumes:
   neo4j_data:
   redis_data:
-  pdf_storage:

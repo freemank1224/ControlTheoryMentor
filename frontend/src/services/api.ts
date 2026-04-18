@@ -4,9 +4,9 @@ import type {
   GraphDataResponse,
   TutorSessionResponse,
   TutorSessionStart
-} from '@/types/api';
+} from '../types/api';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 class APIClient {
   private baseURL: string;
@@ -53,12 +53,12 @@ class APIClient {
   }
 
   async getPDFStatus(id: string): Promise<PDFStatusResponse> {
-    return this.request<PDFStatusResponse>(`/api/pdf/${id}`);
+    return this.request<PDFStatusResponse>(`/api/pdf/${id}/status`);
   }
 
   // Knowledge Graph
-  async getGraph(pdfId: string): Promise<GraphDataResponse> {
-    return this.request<GraphDataResponse>(`/api/graph/${pdfId}`);
+  async getGraph(graphId: string): Promise<GraphDataResponse> {
+    return this.request<GraphDataResponse>(`/api/graph/${graphId}`);
   }
 
   // AI Tutor

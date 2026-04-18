@@ -1,16 +1,19 @@
 export interface PDFUploadResponse {
+  id: string;
   taskId: string;
   filename: string;
-  status: 'processing' | 'completed' | 'failed';
+  page_count: number;
+  status: 'uploaded' | 'parsing' | 'completed' | 'failed';
 }
 
 export interface PDFStatusResponse {
   id: string;
-  filename: string;
-  status: 'processing' | 'completed' | 'failed';
-  pageCount?: number;
-  uploadTime: string;
-  graphId?: string;
+  status: 'uploaded' | 'parsing' | 'completed' | 'failed';
+  task_id?: string;
+  task_status?: string;
+  task_info?: Record<string, unknown>;
+  graph_id?: string;
+  task_error?: string;
 }
 
 export interface NodeData {
@@ -25,9 +28,12 @@ export interface NodeElement {
 }
 
 export interface EdgeData {
+  id: string;
   source: string;
   target: string;
   label: string;
+  relation?: string;
+  confidence?: string;
 }
 
 export interface EdgeElement {
@@ -41,6 +47,12 @@ export interface GraphElements {
 
 export interface GraphDataResponse {
   elements: GraphElements;
+  metadata?: {
+    graphId?: string;
+    total_nodes?: number;
+    total_edges?: number;
+    reportPath?: string;
+  };
 }
 
 export interface TutorSessionStart {

@@ -7,9 +7,9 @@ redis==5.0.1
 # Database
 neo4j==5.15.0
 
-# PDF Processing (Mock for Graphify)
-pypdf==3.17.4
-pdfplumber==0.10.3
+# Graphify pipeline
+graphifyy[pdf,neo4j]==0.4.21
+openai==1.76.0
 
 # Testing
 pytest==7.4.4
