@@ -144,3 +144,32 @@ class LearningFeedbackResponse(BaseModel):
 
     progress: LearningProgress = Field(..., description="Updated progress snapshot")
     feedback: LearningFeedbackEntry = Field(..., description="Persisted feedback entry")
+
+
+class LearningEndpointMetrics(BaseModel):
+    """Runtime counters and latency snapshot for one learning API endpoint."""
+
+    endpoint: str = Field(..., description="Endpoint metric key")
+    totalRequests: int = Field(default=0, description="Total number of requests")
+    successRequests: int = Field(default=0, description="Number of successful requests")
+    errorRequests: int = Field(default=0, description="Number of failed requests")
+    avgLatencyMs: float | None = Field(default=None, description="Average latency in milliseconds")
+    lastLatencyMs: float | None = Field(default=None, description="Most recent latency in milliseconds")
+    lastStatusCode: int | None = Field(default=None, description="Most recent HTTP status code")
+    lastErrorCode: str | None = Field(default=None, description="Most recent mapped error code")
+    updatedAt: str | None = Field(default=None, description="Last metric update timestamp")
+
+
+class LearningMetricsResponse(BaseModel):
+    """Runtime learning API observability snapshot for operations troubleshooting."""
+
+    windowStartedAt: str = Field(..., description="Metrics window start timestamp")
+    generatedAt: str = Field(..., description="Snapshot generation timestamp")
+    endpoints: list[LearningEndpointMetrics] = Field(
+        default_factory=list,
+        description="Per-endpoint counters and latency snapshots",
+    )
+    errorCodeMapping: dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapped error code descriptions for operations",
+    )

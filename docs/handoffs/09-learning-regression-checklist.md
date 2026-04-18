@@ -41,6 +41,7 @@ Run:
 ```powershell
 Push-Location frontend
 npm run test -- tests/integration/api.test.ts --run
+npx playwright test tests/e2e/tutor-learning.spec.ts
 Pop-Location
 ```
 
@@ -49,6 +50,21 @@ Expected:
 1. API client can call `learning/progress`
 2. API client can call `learning/track`
 3. API client can call `learning/feedback`
+4. Tutor learning E2E covers start -> next -> respond -> feedback -> second-session personalization
+
+### Learning Runtime Metrics
+
+Run:
+
+```powershell
+Invoke-RestMethod "http://localhost:18000/api/learning/metrics" | ConvertTo-Json -Depth 8
+```
+
+Expected:
+
+1. Response includes endpoint metrics for `track`, `progress`, `feedback`
+2. Response includes `errorCodeMapping`
+3. At least one endpoint shows non-zero `totalRequests` after regression run
 
 ## Manual End-to-End Checklist
 
@@ -115,4 +131,5 @@ For each run keep:
 1. `POST /api/learning/track`
 2. `GET /api/learning/progress`
 3. `POST /api/learning/feedback`
+4. `GET /api/learning/metrics`
 4. screenshot of tutor page learning panel after at least one feedback submission

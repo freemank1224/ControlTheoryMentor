@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from redis.exceptions import RedisError
 
 from app.schemas.learning import FeedbackDifficulty
 from app.services.learning_service import InMemoryLearningStore, LearningService, get_learning_service
@@ -82,5 +83,81 @@ class TestLearningAPI:
                 assert progress["eventCount"] == 0
                 assert progress["feedbackCount"] == 0
                 assert progress["conceptMastery"] == []
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_runtime_metrics_snapshot_includes_learning_endpoints(self):
+        from app.main import app
+
+        learning_service = LearningService(store=InMemoryLearningStore(data={}), backend_name="memory-test")
+        app.dependency_overrides[get_learning_service] = lambda: learning_service
+        try:
+            with TestClient(app) as client:
+                client.post(
+                    "/api/learning/track",
+                    json={
+                        "learnerId": "learner-metrics",
+                        "graphId": "graph-task-123",
+                        "eventType": "content_viewed",
+                    },
+                )
+                client.get(
+                    "/api/learning/progress",
+                    params={"learnerId": "learner-metrics", "graphId": "graph-task-123"},
+                )
+                client.post(
+                    "/api/learning/feedback",
+                    json={
+                        "learnerId": "learner-metrics",
+                        "graphId": "graph-task-123",
+                        "rating": 4,
+                        "difficulty": FeedbackDifficulty.APPROPRIATE.value,
+                    },
+                )
+
+                metrics_response = client.get("/api/learning/metrics")
+                assert metrics_response.status_code == 200
+
+                data = metrics_response.json()
+                assert "errorCodeMapping" in data
+                assert "LEARNING_STORE_UNAVAILABLE" in data["errorCodeMapping"]
+
+                endpoint_metrics = {item["endpoint"]: item for item in data["endpoints"]}
+                assert endpoint_metrics["track"]["totalRequests"] >= 1
+                assert endpoint_metrics["progress"]["totalRequests"] >= 1
+                assert endpoint_metrics["feedback"]["totalRequests"] >= 1
+                assert endpoint_metrics["track"]["successRequests"] >= 1
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_track_returns_mapped_store_unavailable_error_code(self):
+        from app.main import app
+
+        class FailingLearningService:
+            def track_event(self, request):
+                raise RedisError("simulated redis outage")
+
+        app.dependency_overrides[get_learning_service] = lambda: FailingLearningService()
+        try:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/learning/track",
+                    json={
+                        "learnerId": "learner-fail",
+                        "graphId": "graph-task-123",
+                        "eventType": "step_response",
+                    },
+                )
+
+                assert response.status_code == 503
+                detail = response.json()["detail"]
+                assert detail["code"] == "LEARNING_STORE_UNAVAILABLE"
+
+                metrics_response = client.get("/api/learning/metrics")
+                assert metrics_response.status_code == 200
+                endpoint_metrics = {
+                    item["endpoint"]: item for item in metrics_response.json()["endpoints"]
+                }
+                assert endpoint_metrics["track"]["errorRequests"] >= 1
         finally:
             app.dependency_overrides.clear()

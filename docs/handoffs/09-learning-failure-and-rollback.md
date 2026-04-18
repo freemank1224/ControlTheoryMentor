@@ -19,6 +19,7 @@ Immediate actions:
 1. Keep tutor session flow running (learning calls are non-blocking for tutoring UX)
 2. Surface non-fatal warning in logs/UI
 3. Verify backend and Redis connectivity
+4. Check `GET /api/learning/metrics` and inspect `lastStatusCode` / `lastErrorCode` for `track`, `progress`, `feedback`
 
 ### 2. Redis transient outage
 
@@ -36,6 +37,20 @@ Operational checks:
 
 1. check backend logs for fallback mode entry and exit
 2. call `GET /api/learning/progress` before and after Redis recovery to confirm no data loss
+3. call `GET /api/learning/metrics` to verify `errorCodeMapping` and recent `LEARNING_STORE_UNAVAILABLE` traces
+
+### 4. Error code mapping drift
+
+Symptoms:
+
+1. error responses missing `detail.code`
+2. operations cannot correlate failures with learning API categories
+
+Immediate actions:
+
+1. verify learning route still exports `errorCodeMapping` via `/api/learning/metrics`
+2. verify `track` / `progress` / `feedback` failures map to expected codes (`LEARNING_STORE_UNAVAILABLE`, `LEARNING_*_FAILED`)
+3. run learning integration tests to catch regressions in mapping behavior
 
 ### 3. Frontend personalization inconsistency
 
@@ -115,6 +130,7 @@ Expected impact:
 3. `POST /api/content/generate` or artifact loading works
 4. `GET /api/learning/progress` works (if learning re-enabled)
 5. no event loss across Redis outage/recovery in failover test
+6. `GET /api/learning/metrics` reflects healthy traffic with rising `successRequests`
 
 ## Command Snippets
 
@@ -144,4 +160,10 @@ Pop-Location
 Push-Location frontend
 npm run test -- tests/integration/api.test.ts --run
 Pop-Location
+```
+
+### Inspect learning runtime metrics
+
+```powershell
+Invoke-RestMethod "http://localhost:18000/api/learning/metrics" | ConvertTo-Json -Depth 8
 ```
