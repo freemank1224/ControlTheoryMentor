@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { apiClient } from '@/services/api';
+import { apiClient } from '../../src/services/api';
 
 // Mock fetch
 global.fetch = vi.fn();
@@ -69,7 +69,8 @@ describe('API Client', () => {
   it('should start tutor session', async () => {
     const mockRequest = {
       question: 'What is a PID controller?',
-      pdfId: 'pdf-123'
+      pdfId: 'pdf-123',
+      learnerId: 'learner-1',
     };
 
     const mockResponse = {
@@ -86,6 +87,134 @@ describe('API Client', () => {
     const result = await apiClient.startTutorSession(mockRequest);
     expect(result.sessionId).toBe('session-123');
     expect(result.status).toBe('ready');
+  });
+
+  it('should get learning progress', async () => {
+    const mockResponse = {
+      progress: {
+        learnerId: 'learner-1',
+        graphId: 'graph-task-123',
+        completedStepIds: [],
+        masteryByConcept: {},
+        conceptMastery: [],
+        masteredConceptIds: [],
+        pendingReviewConceptIds: ['concept-pid'],
+        feedbackCount: 0,
+        averageFeedbackRating: null,
+        eventCount: 1,
+        lastEventType: 'content_viewed',
+        lastActivityAt: '2026-04-19T00:00:00Z',
+        recentEvents: [],
+        recentFeedback: [],
+        metadata: { store: 'memory-test' },
+      },
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const result = await apiClient.getLearningProgress('learner-1', 'graph-task-123');
+    expect(result.progress.learnerId).toBe('learner-1');
+    expect(result.progress.pendingReviewConceptIds).toContain('concept-pid');
+  });
+
+  it('should track learning event', async () => {
+    const mockResponse = {
+      progress: {
+        learnerId: 'learner-1',
+        graphId: 'graph-task-123',
+        completedStepIds: [],
+        masteryByConcept: { 'concept-pid': 0.42 },
+        conceptMastery: [],
+        masteredConceptIds: [],
+        pendingReviewConceptIds: ['concept-pid'],
+        feedbackCount: 0,
+        averageFeedbackRating: null,
+        eventCount: 2,
+        lastEventType: 'step_response',
+        lastActivityAt: '2026-04-19T00:00:00Z',
+        recentEvents: [],
+        recentFeedback: [],
+        metadata: { store: 'memory-test' },
+      },
+      event: {
+        id: 'evt-1',
+        eventType: 'step_response',
+        timestamp: '2026-04-19T00:00:00Z',
+        masteryDelta: 0.04,
+        metadata: {},
+      },
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const result = await apiClient.trackLearningEvent({
+      learnerId: 'learner-1',
+      graphId: 'graph-task-123',
+      sessionId: 'session-1',
+      stepId: 'step-2',
+      conceptId: 'concept-pid',
+      eventType: 'step_response',
+      confidence: 0.7,
+    });
+
+    expect(result.event.eventType).toBe('step_response');
+    expect(result.progress.eventCount).toBe(2);
+  });
+
+  it('should submit learning feedback', async () => {
+    const mockResponse = {
+      progress: {
+        learnerId: 'learner-1',
+        graphId: 'graph-task-123',
+        completedStepIds: [],
+        masteryByConcept: {},
+        conceptMastery: [],
+        masteredConceptIds: [],
+        pendingReviewConceptIds: ['concept-pid'],
+        feedbackCount: 1,
+        averageFeedbackRating: 4,
+        eventCount: 2,
+        lastEventType: 'step_response',
+        lastActivityAt: '2026-04-19T00:00:00Z',
+        recentEvents: [],
+        recentFeedback: [],
+        metadata: { store: 'memory-test' },
+      },
+      feedback: {
+        id: 'feedback-1',
+        learnerId: 'learner-1',
+        graphId: 'graph-task-123',
+        rating: 4,
+        difficulty: 'appropriate',
+        metadata: {},
+        createdAt: '2026-04-19T00:00:00Z',
+      },
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const result = await apiClient.submitLearningFeedback({
+      learnerId: 'learner-1',
+      graphId: 'graph-task-123',
+      sessionId: 'session-1',
+      stepId: 'step-2',
+      conceptId: 'concept-pid',
+      rating: 4,
+      difficulty: 'appropriate',
+      comment: 'Good pacing',
+    });
+
+    expect(result.feedback.rating).toBe(4);
+    expect(result.progress.feedbackCount).toBe(1);
   });
 
   it('should handle API errors', async () => {

@@ -58,6 +58,7 @@ export interface GraphDataResponse {
 export interface TutorSessionStart {
   question: string;
   pdfId: string;
+  learnerId?: string;
   mode?: TutorMode;
   context?: Record<string, unknown>;
 }
@@ -195,4 +196,106 @@ export interface ContentTypedPayloadResponse {
   status: ContentArtifactStatus;
   content: string;
   metadata: Record<string, unknown>;
+}
+
+export type LearningEventType =
+  | 'session_started'
+  | 'step_started'
+  | 'step_completed'
+  | 'step_response'
+  | 'content_viewed'
+  | 'session_completed';
+
+export type FeedbackDifficulty = 'too_easy' | 'appropriate' | 'too_hard';
+
+export interface LearningEventRecord {
+  id: string;
+  eventType: LearningEventType;
+  timestamp: string;
+  sessionId?: string | null;
+  stepId?: string | null;
+  conceptId?: string | null;
+  confidence?: number | null;
+  masteryDelta: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface ConceptMasteryState {
+  conceptId: string;
+  score: number;
+  level: 'not_started' | 'developing' | 'practicing' | 'mastered';
+  updatedAt: string;
+}
+
+export interface LearningFeedbackEntry {
+  id: string;
+  learnerId: string;
+  graphId: string;
+  sessionId?: string | null;
+  stepId?: string | null;
+  conceptId?: string | null;
+  rating: number;
+  difficulty: FeedbackDifficulty;
+  comment?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface LearningProgress {
+  learnerId: string;
+  graphId: string;
+  sessionId?: string | null;
+  currentStepId?: string | null;
+  completedStepIds: string[];
+  masteryByConcept: Record<string, number>;
+  conceptMastery: ConceptMasteryState[];
+  masteredConceptIds: string[];
+  pendingReviewConceptIds: string[];
+  feedbackCount: number;
+  averageFeedbackRating?: number | null;
+  eventCount: number;
+  lastEventType?: LearningEventType | null;
+  lastActivityAt: string;
+  recentEvents: LearningEventRecord[];
+  recentFeedback: LearningFeedbackEntry[];
+  metadata: Record<string, unknown>;
+}
+
+export interface LearningTrackRequest {
+  learnerId: string;
+  graphId: string;
+  sessionId?: string;
+  stepId?: string;
+  conceptId?: string;
+  eventType: LearningEventType;
+  masteryDelta?: number;
+  confidence?: number;
+  completedStep?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LearningTrackResponse {
+  progress: LearningProgress;
+  event: LearningEventRecord;
+}
+
+export interface LearningProgressResponse {
+  progress: LearningProgress;
+}
+
+export interface LearningFeedbackRequest {
+  learnerId: string;
+  graphId: string;
+  sessionId?: string;
+  stepId?: string;
+  conceptId?: string;
+  rating: number;
+  difficulty: FeedbackDifficulty;
+  comment?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LearningFeedbackResponse {
+  progress: LearningProgress;
+  feedback: LearningFeedbackEntry;
 }

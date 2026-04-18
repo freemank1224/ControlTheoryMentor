@@ -1,11 +1,17 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 import { apiClient } from '../../services/api';
 import { useContentArtifact } from '../../hooks/useContentArtifact';
 import { useKnowledgeGraph } from '../../hooks/useKnowledgeGraph';
 import { ContentRenderer } from '../content/ContentRenderer';
 import { KnowledgeGraph } from '../graph/KnowledgeGraph';
-import type { TeachingStep, TutorMode, TutorSessionResponse } from '../../types/api';
+import type {
+  FeedbackDifficulty,
+  LearningProgress,
+  TeachingStep,
+  TutorMode,
+  TutorSessionResponse,
+} from '../../types/api';
 
 import './TutorWorkspace.css';
 
@@ -27,12 +33,39 @@ function currentGraphId(session: TutorSessionResponse | null, fallbackGraphId: s
   return fallbackGraphId;
 }
 
+function normalizeLearnerId(value: string): string {
+  return value.trim();
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function sessionPendingReview(session: TutorSessionResponse | null): string[] {
+  const snapshot = session?.metadata?.learningSnapshot;
+  if (!snapshot || typeof snapshot !== 'object') {
+    return [];
+  }
+  const pending = (snapshot as Record<string, unknown>).pendingReviewConceptIds;
+  return toStringArray(pending);
+}
+
 export function TutorWorkspace() {
   const [question, setQuestion] = useState('How does PID reduce steady-state error?');
   const [graphId, setGraphId] = useState('graph-task-123');
+  const [learnerId, setLearnerId] = useState('learner-demo');
   const [mode, setMode] = useState<TutorMode>('interactive');
   const [session, setSession] = useState<TutorSessionResponse | null>(null);
   const [responseText, setResponseText] = useState('');
+  const [responseConfidence, setResponseConfidence] = useState('medium');
+  const [feedbackRating, setFeedbackRating] = useState(4);
+  const [feedbackDifficulty, setFeedbackDifficulty] = useState<FeedbackDifficulty>('appropriate');
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
+  const [latestTrackedStepKey, setLatestTrackedStepKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,25 +79,53 @@ export function TutorWorkspace() {
   } = useContentArtifact(contentId);
 
   const graphIdForView = currentGraphId(session, graphId);
+  const normalizedLearnerId = normalizeLearnerId(learnerId);
   const highlightedNodes = useMemo(
     () => activeStep?.content?.graphHighlights ?? [],
     [activeStep],
   );
+  const pendingReviewFromSession = useMemo(() => sessionPendingReview(session), [session]);
+  const pendingReviewConcepts = useMemo(() => {
+    if (learningProgress?.pendingReviewConceptIds.length) {
+      return learningProgress.pendingReviewConceptIds;
+    }
+    return pendingReviewFromSession;
+  }, [learningProgress, pendingReviewFromSession]);
   const { data: graphData, loading: graphLoading, error: graphError } = useKnowledgeGraph(graphIdForView);
+
+  const refreshLearningProgress = async (
+    targetSession: TutorSessionResponse | null,
+    explicitGraphId?: string,
+  ) => {
+    if (!normalizedLearnerId) {
+      setLearningProgress(null);
+      return;
+    }
+    const targetGraphId = explicitGraphId ?? currentGraphId(targetSession, graphId);
+    const result = await apiClient.getLearningProgress(normalizedLearnerId, targetGraphId);
+    setLearningProgress(result.progress);
+  };
 
   const startSession = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
       setLoading(true);
       setError(null);
+      const context: Record<string, unknown> = { learning_level: 'intermediate' };
+      if (normalizedLearnerId) {
+        context.learnerId = normalizedLearnerId;
+      }
       const result = await apiClient.startTutorSession({
         question,
         pdfId: graphId,
+        learnerId: normalizedLearnerId || undefined,
         mode,
-        context: { learning_level: 'intermediate' },
+        context,
       });
       setSession(result);
+      setLatestTrackedStepKey(null);
       setResponseText('');
+      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -82,6 +143,7 @@ export function TutorWorkspace() {
       const result = await apiClient.nextTutorSessionStep(session.sessionId);
       setSession(result);
       setResponseText('');
+      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -99,6 +161,7 @@ export function TutorWorkspace() {
       const result = await apiClient.backTutorSessionStep(session.sessionId);
       setSession(result);
       setResponseText('');
+      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -116,6 +179,7 @@ export function TutorWorkspace() {
       const result = await apiClient.jumpTutorSessionStep(session.sessionId, { stepId: step.id });
       setSession(result);
       setResponseText('');
+      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -132,15 +196,95 @@ export function TutorWorkspace() {
       setError(null);
       const result = await apiClient.respondToTutorSession(session.sessionId, {
         response: responseText.trim(),
+        metadata: { confidence: responseConfidence },
       });
       setSession(result);
       setResponseText('');
+      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
   };
+
+  const submitLearningFeedback = async () => {
+    if (!session || !normalizedLearnerId) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      const conceptId = activeStep?.relatedTopics?.[0];
+      const result = await apiClient.submitLearningFeedback({
+        learnerId: normalizedLearnerId,
+        graphId: graphIdForView,
+        sessionId: session.sessionId,
+        stepId: activeStep?.id,
+        conceptId,
+        rating: feedbackRating,
+        difficulty: feedbackDifficulty,
+        comment: feedbackComment.trim() || undefined,
+        metadata: {
+          stepType: activeStep?.type,
+          source: 'tutor_workspace',
+        },
+      });
+      setLearningProgress(result.progress);
+      setFeedbackComment('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!session || !activeStep || !normalizedLearnerId) {
+      return;
+    }
+
+    const stepTrackingKey = `${normalizedLearnerId}:${session.sessionId}:${activeStep.id}`;
+    if (stepTrackingKey === latestTrackedStepKey) {
+      return;
+    }
+    setLatestTrackedStepKey(stepTrackingKey);
+
+    const conceptId = activeStep.relatedTopics?.[0];
+    void apiClient
+      .trackLearningEvent({
+        learnerId: normalizedLearnerId,
+        graphId: graphIdForView,
+        sessionId: session.sessionId,
+        stepId: activeStep.id,
+        conceptId,
+        eventType: 'content_viewed',
+        metadata: {
+          source: 'tutor_workspace',
+          stepType: activeStep.type,
+        },
+      })
+      .then((result) => {
+        setLearningProgress(result.progress);
+      })
+      .catch(() => {
+        // Non-blocking telemetry path.
+      });
+  }, [
+    activeStep,
+    graphIdForView,
+    latestTrackedStepKey,
+    normalizedLearnerId,
+    session,
+  ]);
+
+  useEffect(() => {
+    if (!normalizedLearnerId || session) {
+      return;
+    }
+    void refreshLearningProgress(null, graphId);
+  }, [graphId, normalizedLearnerId, session]);
 
   const actionDisabled = loading || !session;
 
@@ -166,6 +310,12 @@ export function TutorWorkspace() {
           placeholder="graph id"
           required
         />
+        <input
+          className="tutor-page__input"
+          value={learnerId}
+          onChange={(event) => setLearnerId(event.target.value)}
+          placeholder="learner id (用于学习闭环)"
+        />
         <select
           className="tutor-page__select"
           value={mode}
@@ -178,6 +328,14 @@ export function TutorWorkspace() {
         </select>
         <button className="tutor-page__button" type="submit" disabled={loading}>
           {loading ? '处理中...' : '启动会话'}
+        </button>
+        <button
+          className="tutor-page__button tutor-page__button--ghost"
+          type="button"
+          disabled={!normalizedLearnerId || loading}
+          onClick={() => void refreshLearningProgress(session)}
+        >
+          刷新学习进度
         </button>
       </form>
 
@@ -232,6 +390,19 @@ export function TutorWorkspace() {
                   onChange={(event) => setResponseText(event.target.value)}
                   placeholder="请输入你对当前步骤的回答"
                 />
+                <div className="tutor-page__response-meta">
+                  <label htmlFor="response-confidence">自评信心:</label>
+                  <select
+                    id="response-confidence"
+                    className="tutor-page__select tutor-page__select--compact"
+                    value={responseConfidence}
+                    onChange={(event) => setResponseConfidence(event.target.value)}
+                  >
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                  </select>
+                </div>
                 <button
                   className="tutor-page__button"
                   type="button"
@@ -287,6 +458,80 @@ export function TutorWorkspace() {
             ) : (
               <div className="tutor-page__status">启动会话后，这里会显示 step plan 和会话消息。</div>
             )}
+
+            <div className="tutor-page__learning">
+              <h4>学习闭环状态</h4>
+              {learningProgress ? (
+                <>
+                  <div className="tutor-page__learning-metrics">
+                    <span>event: {learningProgress.eventCount}</span>
+                    <span>feedback: {learningProgress.feedbackCount}</span>
+                    <span>avg rating: {learningProgress.averageFeedbackRating ?? '-'}</span>
+                  </div>
+                  <div className="tutor-page__badge-list">
+                    {pendingReviewConcepts.map((conceptId) => (
+                      <span key={conceptId} className="tutor-page__badge tutor-page__badge--warn">
+                        待复习 {conceptId}
+                      </span>
+                    ))}
+                    {learningProgress.masteredConceptIds.map((conceptId) => (
+                      <span key={conceptId} className="tutor-page__badge tutor-page__badge--ok">
+                        已掌握 {conceptId}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="tutor-page__learning-empty">
+                  输入 learner id 后可查看学习状态。当前会话仍可运行，但不会记录个性化进度。
+                </p>
+              )}
+
+              <div className="tutor-page__feedback-form">
+                <h5>本步骤反馈</h5>
+                <div className="tutor-page__feedback-row">
+                  <label htmlFor="feedback-rating">评分</label>
+                  <select
+                    id="feedback-rating"
+                    className="tutor-page__select tutor-page__select--compact"
+                    value={feedbackRating}
+                    onChange={(event) => setFeedbackRating(Number(event.target.value))}
+                  >
+                    <option value={5}>5</option>
+                    <option value={4}>4</option>
+                    <option value={3}>3</option>
+                    <option value={2}>2</option>
+                    <option value={1}>1</option>
+                  </select>
+                  <label htmlFor="feedback-difficulty">难度</label>
+                  <select
+                    id="feedback-difficulty"
+                    className="tutor-page__select tutor-page__select--compact"
+                    value={feedbackDifficulty}
+                    onChange={(event) => setFeedbackDifficulty(event.target.value as FeedbackDifficulty)}
+                  >
+                    <option value="too_easy">too_easy</option>
+                    <option value="appropriate">appropriate</option>
+                    <option value="too_hard">too_hard</option>
+                  </select>
+                </div>
+                <textarea
+                  className="tutor-page__textarea"
+                  rows={3}
+                  value={feedbackComment}
+                  onChange={(event) => setFeedbackComment(event.target.value)}
+                  placeholder="可选：描述你觉得难/易的原因"
+                />
+                <button
+                  className="tutor-page__button tutor-page__button--ghost"
+                  type="button"
+                  disabled={!session || !normalizedLearnerId || loading}
+                  onClick={submitLearningFeedback}
+                >
+                  提交学习反馈
+                </button>
+              </div>
+            </div>
           </div>
         </aside>
       </div>

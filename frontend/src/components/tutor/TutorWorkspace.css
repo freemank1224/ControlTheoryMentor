@@ -20,7 +20,7 @@
 
 .tutor-page__start {
   display: grid;
-  grid-template-columns: 1fr 230px 190px auto;
+  grid-template-columns: 1fr 210px 220px 170px auto auto;
   gap: 0.65rem;
   background: linear-gradient(160deg, rgba(201, 100, 66, 0.1), rgba(232, 230, 220, 0.7));
   border: 1px solid var(--border-warm);
@@ -40,6 +40,11 @@
   background: #fff;
   color: var(--text-primary);
   box-sizing: border-box;
+}
+
+.tutor-page__select--compact {
+  min-width: 120px;
+  width: auto;
 }
 
 .tutor-page__button {
@@ -172,6 +177,88 @@
   margin-top: 0.8rem;
   display: grid;
   gap: 0.55rem;
+}
+
+.tutor-page__response-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+
+.tutor-page__learning {
+  margin-top: 0.9rem;
+  border-top: 1px dashed var(--border-cream);
+  padding-top: 0.8rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.tutor-page__learning h4,
+.tutor-page__feedback-form h5 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.tutor-page__learning-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.tutor-page__badge-list {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.tutor-page__badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.22rem 0.55rem;
+  font-size: 0.76rem;
+  border: 1px solid transparent;
+}
+
+.tutor-page__badge--warn {
+  background: #fff3df;
+  border-color: #f0cf97;
+  color: #7a4a0d;
+}
+
+.tutor-page__badge--ok {
+  background: #e9f7ea;
+  border-color: #acd7b0;
+  color: #1d5b25;
+}
+
+.tutor-page__learning-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.tutor-page__feedback-form {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.65rem;
+  border: 1px solid var(--border-cream);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.tutor-page__feedback-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
 
 .tutor-page__graph {

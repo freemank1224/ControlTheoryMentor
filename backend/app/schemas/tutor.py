@@ -125,6 +125,7 @@ class TutorAnalyzeRequest(BaseModel):
     """Request model for graph-grounded tutor analysis."""
     question: str = Field(..., min_length=1, description="Learner question to analyze")
     pdfId: str = Field(..., min_length=1, description="Source graph identifier")
+    learnerId: Optional[str] = Field(default=None, description="Optional learner identifier for personalization")
     mode: TutorMode = Field(default=TutorMode.INTERACTIVE, description="Desired tutoring mode")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Optional learner context")
     limit: int = Field(default=3, ge=1, le=10, description="Maximum number of concept candidates to return")
@@ -284,6 +285,7 @@ class TutorSessionStartRequest(BaseModel):
     """Start a new step-by-step tutor session"""
     question: str = Field(..., min_length=1, description="Learner question that seeds the session")
     pdfId: str = Field(..., min_length=1, description="Source PDF or graph identifier")
+    learnerId: Optional[str] = Field(default=None, description="Optional learner identifier for progress tracking")
     mode: TutorMode = Field(default=TutorMode.INTERACTIVE, description="Desired tutoring mode")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Optional learning context")
 

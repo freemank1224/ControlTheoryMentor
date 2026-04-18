@@ -1,7 +1,7 @@
 # Phase 04 Handoff: 学习闭环与系统硬化
 
 **阶段代号**: P4
-**阶段状态**: ⏳ 待完成
+**阶段状态**: 🚧 进行中（后端+前端学习闭环已打通，等待 E2E 与观测硬化）
 **上游输入**: P3 输出的 content artifact、tutor page、session 流程
 **下游消费者**: 系统收尾、长期迭代
 
@@ -102,15 +102,93 @@ P4 启动前，必须确认 P3 已交付：
 2. personalization 先做规则型回流即可，不必一开始就做复杂推荐。
 3. 必须区分“学习记录已完成”和“推荐系统已完成”。
 
-## 10. 阶段结束时必须更新的内容
+## 10. 阶段更新（2026-04-19）
 
-完成阶段时，请在本文件补充：
+### 10.1 learning state schema 摘要
 
-- `阶段状态`
-- `learning state schema 摘要`
-- `已完成接口`
-- `测试与回归结果`
-- `仍待未来阶段处理的问题`
+已新增 `backend/app/schemas/learning.py`，包含：
+
+1. 事件模型：`LearningEventType`、`LearningEventRecord`
+2. 掌握度模型：`MasteryLevel`、`ConceptMasteryState`
+3. 反馈模型：`FeedbackDifficulty`、`LearningFeedbackEntry`
+4. 进度聚合模型：`LearningProgress`
+5. API 请求/响应：
+1. `LearningTrackRequest` / `LearningTrackResponse`
+2. `LearningProgressResponse`
+3. `LearningFeedbackRequest` / `LearningFeedbackResponse`
+
+### 10.2 已完成接口
+
+已完成并接入 `backend/app/api/routes/learning.py`：
+
+1. `POST /api/learning/track`
+2. `GET /api/learning/progress`
+3. `POST /api/learning/feedback`
+
+已在 `backend/app/main.py` 挂载 `learning` router。
+
+### 10.3 learning service 与持久化
+
+已新增 `backend/app/services/learning_service.py`：
+
+1. Redis 主存 + 内存回退（failover）
+2. progress 聚合（step、event、mastery、feedback）
+3. failback 时自动将 fallback 数据回写主存（避免恢复后状态丢失）
+
+### 10.4 personalization input 回流 tutor
+
+已在 tutor 编排中接入 learning：
+
+1. `TutorAnalyzeRequest` / `TutorSessionStartRequest` 新增可选 `learnerId`
+2. `analyze` 阶段读取学习快照并回写到 `suggestedSession.personalization`
+3. `start_session` / `next` / `respond` 自动写入 learning 事件：
+1. `session_started`
+2. `step_started`
+3. `step_completed`
+4. `step_response`
+5. `session_completed`
+4. 计划编排会使用 `pendingReviewConceptIds` 调整练习与总结提示语
+
+### 10.5 测试与回归结果
+
+本次新增测试：
+
+1. `backend/tests/unit/test_learning_service.py`
+2. `backend/tests/integration/test_learning_api.py`
+3. `backend/tests/integration/test_tutor_api.py`（新增 learning personalization 贯通用例）
+
+执行结果（本地 2026-04-19）：
+
+1. `pytest tests/unit/test_learning_service.py tests/integration/test_learning_api.py tests/integration/test_tutor_api.py -q`
+2. `16 passed, 1 skipped`
+
+前端新增接线与测试：
+
+1. `frontend/src/types/api.ts`：learning API 类型 + `TutorSessionStart.learnerId`
+2. `frontend/src/services/api.ts`：`trackLearningEvent`、`getLearningProgress`、`submitLearningFeedback`
+3. `frontend/src/components/tutor/TutorWorkspace.tsx`：
+1. learner id 输入
+2. progress 面板
+3. step content viewed 自动 track
+4. step-level feedback 提交
+4. `frontend/tests/integration/api.test.ts`：learning API client 覆盖
+
+前端执行结果（本地 2026-04-19）：
+
+1. `npm run test -- tests/integration/api.test.ts --run`
+2. `8 passed`
+
+回归与故障文档：
+
+1. `docs/handoffs/09-learning-regression-checklist.md`
+2. `docs/handoffs/09-learning-failure-and-rollback.md`
+
+### 10.6 仍待未来阶段处理的问题
+
+1. learning event 目前以规则聚合为主，尚未引入更细粒度 mastery 估计策略。
+2. 目前 learnerId 由请求显式传入，尚未接入完整用户身份体系。
+3. 尚未补齐覆盖真实浏览器交互路径的 E2E learning 用例（当前已完成 API 集成层测试）。
+4. 观测能力目前以测试回归为主，未完成生产级指标与告警对接。
 
 ## 11. 下一 session 启动提示词
 

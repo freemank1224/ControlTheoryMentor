@@ -3,6 +3,11 @@ import type {
   ContentGenerateResponse,
   ContentInteractiveRequest,
   ContentTypedPayloadResponse,
+  LearningFeedbackRequest,
+  LearningFeedbackResponse,
+  LearningProgressResponse,
+  LearningTrackRequest,
+  LearningTrackResponse,
   PDFUploadResponse,
   PDFStatusResponse,
   GraphDataResponse,
@@ -136,6 +141,26 @@ class APIClient {
 
   async getContentLatex(contentId: string): Promise<ContentTypedPayloadResponse> {
     return this.request<ContentTypedPayloadResponse>(`/api/content/${contentId}/latex`);
+  }
+
+  // Learning Loop
+  async trackLearningEvent(request: LearningTrackRequest): Promise<LearningTrackResponse> {
+    return this.request<LearningTrackResponse>('/api/learning/track', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getLearningProgress(learnerId: string, graphId: string): Promise<LearningProgressResponse> {
+    const params = new URLSearchParams({ learnerId, graphId });
+    return this.request<LearningProgressResponse>(`/api/learning/progress?${params.toString()}`);
+  }
+
+  async submitLearningFeedback(request: LearningFeedbackRequest): Promise<LearningFeedbackResponse> {
+    return this.request<LearningFeedbackResponse>('/api/learning/feedback', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   }
 }
 

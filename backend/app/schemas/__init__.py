@@ -51,6 +51,20 @@ from app.schemas.content import (
     ContentInteractiveRequest,
     ContentTypedPayloadResponse,
 )
+from app.schemas.learning import (
+    ConceptMasteryState,
+    FeedbackDifficulty,
+    LearningEventRecord,
+    LearningEventType,
+    LearningFeedbackEntry,
+    LearningFeedbackRequest,
+    LearningFeedbackResponse,
+    LearningProgress,
+    LearningProgressResponse,
+    LearningTrackRequest,
+    LearningTrackResponse,
+    MasteryLevel,
+)
 
 __all__ = [
     "PDFUploadResponse",
@@ -97,4 +111,16 @@ __all__ = [
     "ContentGenerateResponse",
     "ContentInteractiveRequest",
     "ContentTypedPayloadResponse",
+    "ConceptMasteryState",
+    "FeedbackDifficulty",
+    "LearningEventRecord",
+    "LearningEventType",
+    "LearningFeedbackEntry",
+    "LearningFeedbackRequest",
+    "LearningFeedbackResponse",
+    "LearningProgress",
+    "LearningProgressResponse",
+    "LearningTrackRequest",
+    "LearningTrackResponse",
+    "MasteryLevel",
 ]

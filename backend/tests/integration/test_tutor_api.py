@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 from redis import Redis
 from redis.exceptions import RedisError
 
+from app.schemas.learning import LearningEventType, LearningTrackRequest
 from app.schemas.tutor import TutorMode
+from app.services.learning_service import InMemoryLearningStore, LearningService, get_learning_service
 from app.services.session_service import FailoverSessionService, InMemorySessionStore, RedisSessionStore, SessionService
 from app.services.tutor_service import TutorService, get_tutor_service
 
@@ -186,8 +188,15 @@ def app():
     return fastapi_app
 
 
-def build_tutor_service(session_service: SessionService) -> TutorService:
-    return TutorService(node_service=FakeNodeService(), session_service=session_service)
+def build_tutor_service(
+    session_service: SessionService,
+    learning_service: LearningService | None = None,
+) -> TutorService:
+    return TutorService(
+        node_service=FakeNodeService(),
+        session_service=session_service,
+        learning_service=learning_service,
+    )
 
 
 def cleanup_redis_namespace(client: Redis, prefix: str, index_key: str) -> None:
@@ -252,6 +261,49 @@ class TestTutorAnalyzeAPI:
 
 class TestTutorSessionAPI:
     """Test service-backed tutor session endpoints."""
+
+    def test_session_start_includes_learning_personalization_snapshot(self, app):
+        learning_service = LearningService(
+            store=InMemoryLearningStore(data={}),
+            backend_name="memory-learning-test",
+        )
+        learning_service.track_event(
+            LearningTrackRequest(
+                learnerId="learner-7",
+                graphId="graph-task-123",
+                conceptId="concept-feedback",
+                eventType=LearningEventType.STEP_RESPONSE,
+                masteryDelta=0.1,
+            )
+        )
+        session_service = SessionService(InMemorySessionStore(data={}), backend_name="memory-test")
+        tutor_service = build_tutor_service(session_service=session_service, learning_service=learning_service)
+
+        app.dependency_overrides[get_tutor_service] = lambda: tutor_service
+        app.dependency_overrides[get_learning_service] = lambda: learning_service
+        try:
+            with TestClient(app) as client:
+                response = client.post(
+                    "/api/tutor/session/start",
+                    json={
+                        "question": "Explain PID controllers",
+                        "pdfId": "graph-task-123",
+                        "learnerId": "learner-7",
+                        "mode": "interactive",
+                    },
+                )
+
+                assert response.status_code == 200
+                data = response.json()
+                personalization = data["metadata"]["learningSnapshot"]
+                assert "pendingReviewConceptIds" in personalization
+                assert "concept-feedback" in personalization["pendingReviewConceptIds"]
+                assert data["metadata"]["learnerId"] == "learner-7"
+
+                progress = learning_service.get_progress("learner-7", "graph-task-123")
+                assert progress.eventCount >= 2
+        finally:
+            app.dependency_overrides.clear()
 
     def test_start_session_returns_plan_with_analysis(self, client: TestClient):
         response = client.post(
