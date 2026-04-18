@@ -74,6 +74,12 @@
   gap: 0.9rem;
 }
 
+.tutor-page__side {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+
 .tutor-page__panel {
   border: 1px solid var(--border-cream);
   border-radius: var(--card-radius);
@@ -271,6 +277,10 @@
   }
 
   .tutor-page__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tutor-page__side {
     grid-template-columns: 1fr;
   }
 }

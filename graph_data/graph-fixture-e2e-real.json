@@ -1,0 +1,75 @@
+{
+  "nodes": [
+    {
+      "id": "concept-pid",
+      "label": "PID Controller",
+      "type": "concept",
+      "source_file": "control-theory-fixture.pdf",
+      "source_location": "p12",
+      "properties": {
+        "summary": "PID control uses proportional, integral, and derivative terms to reduce steady-state error and improve response quality.",
+        "keywords": ["pid", "steady-state error", "feedback", "control"]
+      }
+    },
+    {
+      "id": "concept-feedback-loop",
+      "label": "Feedback Loop",
+      "type": "concept",
+      "source_file": "control-theory-fixture.pdf",
+      "source_location": "p8",
+      "properties": {
+        "summary": "A feedback loop compares output with reference and drives error toward zero."
+      }
+    },
+    {
+      "id": "concept-steady-state-error",
+      "label": "Steady-State Error",
+      "type": "concept",
+      "source_file": "control-theory-fixture.pdf",
+      "source_location": "p15",
+      "properties": {
+        "summary": "Steady-state error is the residual error after transient dynamics settle."
+      }
+    },
+    {
+      "id": "concept-integral-action",
+      "label": "Integral Action",
+      "type": "concept",
+      "source_file": "control-theory-fixture.pdf",
+      "source_location": "p13",
+      "properties": {
+        "summary": "Integral action accumulates error over time and helps eliminate steady-state offset."
+      }
+    }
+  ],
+  "links": [
+    {
+      "id": "edge-feedback-supports-pid",
+      "source": "concept-feedback-loop",
+      "target": "concept-pid",
+      "relation": "supports",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "edge-pid-reduces-sse",
+      "source": "concept-pid",
+      "target": "concept-steady-state-error",
+      "relation": "reduces",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "edge-integral-builds-on-feedback",
+      "source": "concept-integral-action",
+      "target": "concept-feedback-loop",
+      "relation": "builds_on",
+      "confidence": "MEDIUM"
+    },
+    {
+      "id": "edge-integral-related-pid",
+      "source": "concept-integral-action",
+      "target": "concept-pid",
+      "relation": "related_to",
+      "confidence": "MEDIUM"
+    }
+  ]
+}

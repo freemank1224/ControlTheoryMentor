@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const dockerE2E = process.env.PW_DOCKER_E2E === '1';
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || (dockerE2E ? 'http://localhost:5173' : 'http://localhost:3000');
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
@@ -8,7 +11,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL,
     trace: 'on-first-retry',
   },
   projects: [
@@ -17,9 +20,11 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: dockerE2E
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: 'http://localhost:3000',
+        reuseExistingServer: !process.env.CI,
+      },
 });

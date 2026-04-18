@@ -40,7 +40,36 @@ class APIClient {
     });
 
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+      let message = `API Error: ${response.status}`;
+      const contentType = response.headers.get('content-type') || '';
+
+      try {
+        if (contentType.includes('application/json')) {
+          const payload = await response.json() as {
+            detail?: string | { message?: string };
+            message?: string;
+          };
+
+          if (typeof payload.detail === 'string' && payload.detail) {
+            message = `API Error: ${payload.detail}`;
+          } else if (payload.detail && typeof payload.detail === 'object' && payload.detail.message) {
+            message = `API Error: ${payload.detail.message}`;
+          } else if (typeof payload.message === 'string' && payload.message) {
+            message = `API Error: ${payload.message}`;
+          } else {
+            message = `API Error: ${response.status}`;
+          }
+        } else {
+          const text = (await response.text()).trim();
+          if (text) {
+            message = `API Error: ${text}`;
+          }
+        }
+      } catch {
+        message = `API Error: ${response.status}`;
+      }
+
+      throw new Error(message);
     }
 
     return response.json();

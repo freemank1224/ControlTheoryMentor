@@ -15,6 +15,8 @@ import type {
 
 import './TutorWorkspace.css';
 
+const DEFAULT_TUTOR_GRAPH_ID = import.meta.env.VITE_DEFAULT_GRAPH_ID || 'graph-fixture-e2e-real';
+
 function messageRoleLabel(role: string): string {
   if (role === 'assistant') {
     return '导师';
@@ -55,7 +57,7 @@ function sessionPendingReview(session: TutorSessionResponse | null): string[] {
 
 export function TutorWorkspace() {
   const [question, setQuestion] = useState('How does PID reduce steady-state error?');
-  const [graphId, setGraphId] = useState('graph-task-123');
+  const [graphId, setGraphId] = useState(DEFAULT_TUTOR_GRAPH_ID);
   const [learnerId, setLearnerId] = useState('learner-demo');
   const [mode, setMode] = useState<TutorMode>('interactive');
   const [session, setSession] = useState<TutorSessionResponse | null>(null);
@@ -344,7 +346,7 @@ export function TutorWorkspace() {
       <div className="tutor-page__grid">
         <section className="tutor-page__panel">
           <div className="tutor-page__panel-header">
-            <h3>{activeStep ? `当前步骤: ${activeStep.title}` : '内容渲染区'}</h3>
+            <h3>{activeStep ? `当前步骤: ${activeStep.title}` : '会话展示区'}</h3>
           </div>
           <div className="tutor-page__panel-body">
             <ContentRenderer
@@ -418,138 +420,140 @@ export function TutorWorkspace() {
           </div>
         </section>
 
-        <aside className="tutor-page__panel">
-          <div className="tutor-page__panel-header">
-            <h3>会话编排</h3>
-          </div>
-          <div className="tutor-page__panel-body">
-            {session ? (
-              <>
-                <div className="tutor-page__step-list">
-                  {session.plan.steps.map((step) => {
-                    const isActive = session.currentStep?.id === step.id;
-                    return (
-                      <button
-                        key={step.id}
-                        type="button"
-                        className={`tutor-page__step-item ${isActive ? 'is-active' : ''}`}
-                        onClick={() => void jumpToStep(step)}
-                      >
-                        <p className="tutor-page__step-title">{step.title}</p>
-                        <p className="tutor-page__step-meta">
-                          {step.type} | artifact: {step.content.contentArtifactStatus ?? 'none'}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="tutor-page__status">状态: {session.status} | 步骤索引: {session.currentStepIndex}</div>
-
-                <div className="tutor-page__messages">
-                  {session.messages.slice(-6).map((message, index) => (
-                    <div key={`${message.role}-${index}`} className="tutor-page__message">
-                      <strong>{messageRoleLabel(message.role)}</strong>
-                      <div>{message.content}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="tutor-page__status">启动会话后，这里会显示 step plan 和会话消息。</div>
-            )}
-
-            <div className="tutor-page__learning">
-              <h4>学习闭环状态</h4>
-              {learningProgress ? (
+        <aside className="tutor-page__side">
+          <section className="tutor-page__panel">
+            <div className="tutor-page__panel-header">
+              <h3>会话编排</h3>
+            </div>
+            <div className="tutor-page__panel-body">
+              {session ? (
                 <>
-                  <div className="tutor-page__learning-metrics">
-                    <span>event: {learningProgress.eventCount}</span>
-                    <span>feedback: {learningProgress.feedbackCount}</span>
-                    <span>avg rating: {learningProgress.averageFeedbackRating ?? '-'}</span>
+                  <div className="tutor-page__step-list">
+                    {session.plan.steps.map((step) => {
+                      const isActive = session.currentStep?.id === step.id;
+                      return (
+                        <button
+                          key={step.id}
+                          type="button"
+                          className={`tutor-page__step-item ${isActive ? 'is-active' : ''}`}
+                          onClick={() => void jumpToStep(step)}
+                        >
+                          <p className="tutor-page__step-title">{step.title}</p>
+                          <p className="tutor-page__step-meta">
+                            {step.type} | artifact: {step.content.contentArtifactStatus ?? 'none'}
+                          </p>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="tutor-page__badge-list">
-                    {pendingReviewConcepts.map((conceptId) => (
-                      <span key={conceptId} className="tutor-page__badge tutor-page__badge--warn">
-                        待复习 {conceptId}
-                      </span>
-                    ))}
-                    {learningProgress.masteredConceptIds.map((conceptId) => (
-                      <span key={conceptId} className="tutor-page__badge tutor-page__badge--ok">
-                        已掌握 {conceptId}
-                      </span>
+
+                  <div className="tutor-page__status">状态: {session.status} | 步骤索引: {session.currentStepIndex}</div>
+
+                  <div className="tutor-page__messages">
+                    {session.messages.slice(-6).map((message, index) => (
+                      <div key={`${message.role}-${index}`} className="tutor-page__message">
+                        <strong>{messageRoleLabel(message.role)}</strong>
+                        <div>{message.content}</div>
+                      </div>
                     ))}
                   </div>
                 </>
               ) : (
-                <p className="tutor-page__learning-empty">
-                  输入 learner id 后可查看学习状态。当前会话仍可运行，但不会记录个性化进度。
-                </p>
+                <div className="tutor-page__status">启动会话后，这里会显示 step plan 和会话消息。</div>
               )}
 
-              <div className="tutor-page__feedback-form">
-                <h5>本步骤反馈</h5>
-                <div className="tutor-page__feedback-row">
-                  <label htmlFor="feedback-rating">评分</label>
-                  <select
-                    id="feedback-rating"
-                    className="tutor-page__select tutor-page__select--compact"
-                    value={feedbackRating}
-                    onChange={(event) => setFeedbackRating(Number(event.target.value))}
+              <div className="tutor-page__learning">
+                <h4>学习闭环状态</h4>
+                {learningProgress ? (
+                  <>
+                    <div className="tutor-page__learning-metrics">
+                      <span>event: {learningProgress.eventCount}</span>
+                      <span>feedback: {learningProgress.feedbackCount}</span>
+                      <span>avg rating: {learningProgress.averageFeedbackRating ?? '-'}</span>
+                    </div>
+                    <div className="tutor-page__badge-list">
+                      {pendingReviewConcepts.map((conceptId) => (
+                        <span key={conceptId} className="tutor-page__badge tutor-page__badge--warn">
+                          待复习 {conceptId}
+                        </span>
+                      ))}
+                      {learningProgress.masteredConceptIds.map((conceptId) => (
+                        <span key={conceptId} className="tutor-page__badge tutor-page__badge--ok">
+                          已掌握 {conceptId}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="tutor-page__learning-empty">
+                    输入 learner id 后可查看学习状态。当前会话仍可运行，但不会记录个性化进度。
+                  </p>
+                )}
+
+                <div className="tutor-page__feedback-form">
+                  <h5>本步骤反馈</h5>
+                  <div className="tutor-page__feedback-row">
+                    <label htmlFor="feedback-rating">评分</label>
+                    <select
+                      id="feedback-rating"
+                      className="tutor-page__select tutor-page__select--compact"
+                      value={feedbackRating}
+                      onChange={(event) => setFeedbackRating(Number(event.target.value))}
+                    >
+                      <option value={5}>5</option>
+                      <option value={4}>4</option>
+                      <option value={3}>3</option>
+                      <option value={2}>2</option>
+                      <option value={1}>1</option>
+                    </select>
+                    <label htmlFor="feedback-difficulty">难度</label>
+                    <select
+                      id="feedback-difficulty"
+                      className="tutor-page__select tutor-page__select--compact"
+                      value={feedbackDifficulty}
+                      onChange={(event) => setFeedbackDifficulty(event.target.value as FeedbackDifficulty)}
+                    >
+                      <option value="too_easy">too_easy</option>
+                      <option value="appropriate">appropriate</option>
+                      <option value="too_hard">too_hard</option>
+                    </select>
+                  </div>
+                  <textarea
+                    className="tutor-page__textarea"
+                    rows={3}
+                    value={feedbackComment}
+                    onChange={(event) => setFeedbackComment(event.target.value)}
+                    placeholder="可选：描述你觉得难/易的原因"
+                  />
+                  <button
+                    className="tutor-page__button tutor-page__button--ghost"
+                    type="button"
+                    disabled={!session || !normalizedLearnerId || loading}
+                    onClick={submitLearningFeedback}
                   >
-                    <option value={5}>5</option>
-                    <option value={4}>4</option>
-                    <option value={3}>3</option>
-                    <option value={2}>2</option>
-                    <option value={1}>1</option>
-                  </select>
-                  <label htmlFor="feedback-difficulty">难度</label>
-                  <select
-                    id="feedback-difficulty"
-                    className="tutor-page__select tutor-page__select--compact"
-                    value={feedbackDifficulty}
-                    onChange={(event) => setFeedbackDifficulty(event.target.value as FeedbackDifficulty)}
-                  >
-                    <option value="too_easy">too_easy</option>
-                    <option value="appropriate">appropriate</option>
-                    <option value="too_hard">too_hard</option>
-                  </select>
+                    提交学习反馈
+                  </button>
                 </div>
-                <textarea
-                  className="tutor-page__textarea"
-                  rows={3}
-                  value={feedbackComment}
-                  onChange={(event) => setFeedbackComment(event.target.value)}
-                  placeholder="可选：描述你觉得难/易的原因"
-                />
-                <button
-                  className="tutor-page__button tutor-page__button--ghost"
-                  type="button"
-                  disabled={!session || !normalizedLearnerId || loading}
-                  onClick={submitLearningFeedback}
-                >
-                  提交学习反馈
-                </button>
               </div>
             </div>
-          </div>
+          </section>
+
+          <section className="tutor-page__panel">
+            <div className="tutor-page__panel-header">
+              <h3>知识图谱高亮</h3>
+            </div>
+            <div className="tutor-page__panel-body">
+              {graphLoading && <div className="tutor-page__status">图谱加载中...</div>}
+              {graphError && <div className="tutor-page__error">图谱加载失败: {graphError.message}</div>}
+              {graphData && (
+                <div className="tutor-page__graph">
+                  <KnowledgeGraph data={graphData} highlightedNodes={highlightedNodes} />
+                </div>
+              )}
+            </div>
+          </section>
         </aside>
       </div>
-
-      <section className="tutor-page__panel" style={{ marginTop: '0.9rem' }}>
-        <div className="tutor-page__panel-header">
-          <h3>知识图谱高亮</h3>
-        </div>
-        <div className="tutor-page__panel-body">
-          {graphLoading && <div className="tutor-page__status">图谱加载中...</div>}
-          {graphError && <div className="tutor-page__error">图谱加载失败: {graphError.message}</div>}
-          {graphData && (
-            <div className="tutor-page__graph">
-              <KnowledgeGraph data={graphData} highlightedNodes={highlightedNodes} />
-            </div>
-          )}
-        </div>
-      </section>
     </div>
   );
 }
