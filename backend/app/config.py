@@ -1,6 +1,8 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     # Neo4j
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
@@ -16,8 +18,5 @@ class Settings(BaseSettings):
     PDF_STORAGE_PATH: str = "./pdfs"
     GRAPH_ARTIFACTS_PATH: str = "./graph_data"
     MAX_PDF_PAGES: int = 1200
-
-    class Config:
-        env_file = ".env"
 
 settings = Settings()

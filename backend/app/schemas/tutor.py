@@ -1,9 +1,9 @@
-"""
-Tutor schemas for AI tutoring interactions
-"""
+"""Tutor schemas for AI tutoring interactions."""
 from typing import List, Dict, Any, Optional
 from enum import Enum
 from pydantic import BaseModel, Field
+
+from app.schemas.node import NodeSummary
 
 
 class MessageType(str, Enum):
@@ -107,6 +107,48 @@ class TutorResponse(BaseModel):
         }
 
 
+class TutorAnalyzeRequest(BaseModel):
+    """Request model for graph-grounded tutor analysis."""
+    question: str = Field(..., min_length=1, description="Learner question to analyze")
+    pdfId: str = Field(..., min_length=1, description="Source graph identifier")
+    mode: TutorMode = Field(default=TutorMode.INTERACTIVE, description="Desired tutoring mode")
+    context: Optional[Dict[str, Any]] = Field(default=None, description="Optional learner context")
+    limit: int = Field(default=3, ge=1, le=10, description="Maximum number of concept candidates to return")
+
+
+class TutorEvidencePassage(BaseModel):
+    """Sentence-level evidence excerpt ranked for tutor orchestration."""
+    chunkId: str = Field(..., description="Source chunk identifier")
+    conceptId: str = Field(..., description="Related concept identifier")
+    conceptLabel: str = Field(..., description="Related concept label")
+    sourceFile: str = Field(..., description="Source file path relative to the graph root")
+    sourceLocation: Optional[str] = Field(default=None, description="Source location carried from Graphify")
+    pageStart: Optional[int] = Field(default=None, description="Starting page number when available")
+    pageEnd: Optional[int] = Field(default=None, description="Ending page number when available")
+    excerpt: str = Field(..., min_length=1, description="Sentence-level excerpt selected from the chunk")
+    score: float = Field(..., description="Ranking score for the excerpt")
+
+
+class TutorAnalyzeConcept(BaseModel):
+    """Concept candidate returned by tutor analyze."""
+    node: NodeSummary = Field(..., description="Matched graph node")
+    matchScore: float = Field(..., description="Semantic search score")
+    summary: str = Field(..., description="Compact summary of why the concept matters")
+    prerequisitesCount: int = Field(default=0, description="Number of prerequisite concepts")
+    relatedCount: int = Field(default=0, description="Number of related concepts")
+
+
+class TutorAnalyzeResponse(BaseModel):
+    """Graph-grounded analysis result used before starting a session."""
+    graphId: str = Field(..., description="Graph identifier")
+    question: str = Field(..., description="Original learner question")
+    summary: str = Field(..., description="Analysis summary")
+    relevantConcepts: List[TutorAnalyzeConcept] = Field(default_factory=list, description="Matched graph concepts")
+    highlightedNodeIds: List[str] = Field(default_factory=list, description="Node ids to highlight in the graph view")
+    evidencePassages: List[TutorEvidencePassage] = Field(default_factory=list, description="Ranked evidence excerpts from source passages")
+    suggestedSession: Dict[str, Any] = Field(default_factory=dict, description="Suggested session bootstrap metadata")
+
+
 class TeachingStep(BaseModel):
     """Single step inside a tutor session plan"""
     id: str = Field(..., description="Unique step identifier")
@@ -187,6 +229,12 @@ class TutorSessionRespondRequest(BaseModel):
         }
 
 
+class TutorSessionJumpRequest(BaseModel):
+    """Jump to a specific step in the tutor session."""
+    stepIndex: Optional[int] = Field(default=None, ge=0, description="Target zero-based step index")
+    stepId: Optional[str] = Field(default=None, description="Target step identifier")
+
+
 class TutorSessionResponse(BaseModel):
     """Current state of a step-by-step tutor session"""
     sessionId: str = Field(..., description="Unique tutor session identifier")
@@ -221,6 +269,26 @@ class TutorSessionResponse(BaseModel):
                 }
             }
         }
+
+
+class TutorSessionListItem(BaseModel):
+    """Summary row returned by the session listing endpoint."""
+    sessionId: str = Field(..., description="Session identifier")
+    question: str = Field(..., description="Original learner question")
+    pdfId: str = Field(..., description="Source graph identifier")
+    mode: str = Field(..., description="Tutor mode")
+    status: str = Field(..., description="Current session status")
+    currentStepIndex: int = Field(default=-1, description="Current step index")
+    currentStepTitle: Optional[str] = Field(default=None, description="Current step title when available")
+    topics: List[str] = Field(default_factory=list, description="Topics associated with the session")
+    updatedAt: str = Field(..., description="Last updated timestamp")
+
+
+class TutorSessionsResponse(BaseModel):
+    """List response for stored tutor sessions."""
+    items: List[TutorSessionListItem] = Field(default_factory=list, description="Stored session summaries")
+    total: int = Field(default=0, description="Total returned sessions")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Listing metadata")
 
 
 class QuizRequest(BaseModel):

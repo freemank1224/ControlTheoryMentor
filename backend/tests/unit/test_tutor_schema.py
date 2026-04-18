@@ -8,15 +8,23 @@ from app.schemas.tutor import (
     TeachingStep,
     TeachingStepType,
     TutorMessage,
+    TutorAnalyzeConcept,
+    TutorAnalyzeRequest,
+    TutorAnalyzeResponse,
+    TutorEvidencePassage,
     TutorRequest,
     TutorResponse,
+    TutorSessionJumpRequest,
+    TutorSessionListItem,
     TutorSessionRespondRequest,
     TutorSessionResponse,
     TutorSessionStartRequest,
     TutorSessionStatus,
+    TutorSessionsResponse,
     MessageType,
     TutorMode
 )
+from app.schemas.node import NodeSummary
 
 
 class TestTutorMessage:
@@ -181,3 +189,97 @@ class TestTutorSessionSchemas:
         assert response.currentStep.id == "step-1"
         assert response.status == TutorSessionStatus.IN_PROGRESS
         assert response.metadata["pdfId"] == "graph-task-123"
+
+
+class TestTutorAnalyzeSchemas:
+    """Test graph-grounded tutor analyze schemas."""
+
+    def test_tutor_analyze_request_defaults(self):
+        request = TutorAnalyzeRequest(
+            question="How does PID reduce steady-state error?",
+            pdfId="graph-task-123",
+        )
+
+        assert request.mode == TutorMode.INTERACTIVE
+        assert request.limit == 3
+        assert request.context is None
+
+    def test_tutor_evidence_passage_requires_excerpt(self):
+        with pytest.raises(ValidationError):
+            TutorEvidencePassage(
+                chunkId="chunk-1",
+                conceptId="concept-pid",
+                conceptLabel="PID Controller",
+                sourceFile="chapter-3.pdf",
+                excerpt="",
+                score=0.9,
+            )
+
+    def test_tutor_analyze_response_serializes_concepts_and_evidence(self):
+        node = NodeSummary(
+            graphId="graph-task-123",
+            id="concept-pid",
+            label="PID Controller",
+            nodeType="concept",
+            fileType="pdf",
+            community=1,
+            sourceFile="chapter-3.pdf",
+            sourceLocation="p.12",
+            properties={},
+        )
+        concept = TutorAnalyzeConcept(
+            node=node,
+            matchScore=0.95,
+            summary="前置概念 1 个，公式 1 个，例题 1 个。",
+            prerequisitesCount=1,
+            relatedCount=2,
+        )
+        evidence = TutorEvidencePassage(
+            chunkId="chunk-pid-1",
+            conceptId="concept-pid",
+            conceptLabel="PID Controller",
+            sourceFile="chapter-3.pdf",
+            sourceLocation="p.12",
+            pageStart=12,
+            pageEnd=12,
+            excerpt="Integral action removes steady-state error.",
+            score=0.98,
+        )
+
+        response = TutorAnalyzeResponse(
+            graphId="graph-task-123",
+            question="How does PID reduce steady-state error?",
+            summary="PID is the primary concept.",
+            relevantConcepts=[concept],
+            highlightedNodeIds=["concept-pid"],
+            evidencePassages=[evidence],
+            suggestedSession={"mode": "interactive"},
+        )
+
+        assert response.relevantConcepts[0].node.id == "concept-pid"
+        assert response.evidencePassages[0].pageStart == 12
+        assert response.highlightedNodeIds == ["concept-pid"]
+
+
+class TestTutorSessionListingSchemas:
+    """Test tutor session jump and listing schemas."""
+
+    def test_tutor_session_jump_request_accepts_step_index(self):
+        request = TutorSessionJumpRequest(stepIndex=2)
+        assert request.stepIndex == 2
+        assert request.stepId is None
+
+    def test_tutor_session_list_response_defaults(self):
+        item = TutorSessionListItem(
+            sessionId="session-123",
+            question="Explain PID controllers",
+            pdfId="graph-task-123",
+            mode="interactive",
+            status="ready",
+            updatedAt="2026-04-18T00:00:00Z",
+        )
+        response = TutorSessionsResponse(items=[item], total=1, metadata={"store": "memory-test"})
+
+        assert response.total == 1
+        assert response.items[0].currentStepIndex == -1
+        assert response.metadata["store"] == "memory-test"

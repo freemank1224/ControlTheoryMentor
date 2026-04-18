@@ -68,11 +68,13 @@ P1 知识底座完善
 ### 4.2 工作包
 
 1. 实现 `POST /api/tutor/analyze`，输入问题，输出相关图谱节点与分析摘要。
-2. 将 session state 从进程内存迁移到 Redis。
-3. 扩展 tutor session API：`current`、`back`、`jump`、`sessions` 列表与恢复。
-4. 建立 `Tutor Orchestrator`，统一处理 analyze、plan、step transition。
-5. 在 step 输出中加入 graph highlight metadata。
-6. 将 session response 与前端导师页需要的契约稳定下来。
+2. 将 P1 的 `passages` 真正接入 tutor analyze 与 plan generation，使导师编排基于图谱结果 + 原文证据，而不是只消费节点标签。
+3. 将 chunk 级 `passages` 进一步细化为句段级引用与排序，降低 tutor 上下文噪声，并为后续 content generation 提供更干净的 evidence payload。
+4. 将 session state 从进程内存迁移到 Redis。
+5. 扩展 tutor session API：`current`、`back`、`jump`、`sessions` 列表与恢复。
+6. 建立 `Tutor Orchestrator`，统一处理 analyze、plan、step transition。
+7. 在 step 输出中加入 graph highlight metadata。
+8. 将 session response 与前端导师页需要的契约稳定下来。
 
 ### 4.3 最小交付
 

@@ -1,7 +1,7 @@
 # Phase 01 Handoff: 知识底座完善
 
 **阶段代号**: P1
-**阶段状态**: ⏳ 待完成
+**阶段状态**: ✅ 已完成
 **上游输入**: 现有 Graphify worker 主链路、graph artifact 输出、基础 graph API
 **下游消费者**: P2 导师编排闭环
 
@@ -100,26 +100,22 @@
 
 P2 开始前必须能从本阶段拿到：
 
-1. 问题分析时可调用的搜索接口列表
-2. 概念上下文 response schema
-3. tutor 可直接依赖的 graph lookup contract
-4. 已知图谱质量限制和查询限制
+1. 问题分析可直接调用以下接口，且全部要求 `graphId` 作为图谱范围参数：`GET /api/node/search`、`GET /api/node/fulltext`、`POST /api/node/semantic`、`GET /api/node/{id}`、`GET /api/node/{id}/neighbors`、`GET /api/tutor/concept/{id}/context`。
+2. `concept context` 已稳定为：`concept`、`prerequisites`、`relatedNodes`、`formulas`、`examples`、`sourceSections`、`lookup`、`metadata`。
+3. tutor 可直接依赖 `lookup` 契约中的 `graphId`、`conceptId`、`sourcePriority`、`semanticSearchStrategy`、`graphSource`、`artifactPath`、`reportPath`、`neo4jEnrichmentAvailable`。
+4. 当前查询限制已明确：artifact 为主数据源；Neo4j 仅做 best-effort enrichment；语义搜索当前实现为关键词提取 + fulltext fallback，而非 embedding 检索。
 
-## 9. 已知风险
+## 9. 遗留问题
 
-1. Graphify 输出质量仍然受 provider 影响，不能把搜索失败都归因为 API 问题。
-2. 如果 Neo4j 读模型与 artifact 读模型不一致，必须先定义优先级与 fallback 规则。
-3. 语义搜索如暂时无法做强语义召回，可先实现关键词提取 + fulltext fallback，但必须写清楚。
+1. Graphify 输出质量仍受 provider 和抽取质量影响，节点命中率与上下文完整度不能只从 API 层面判断。
+2. Neo4j 当前未携带图级别隔离信息，P1 已采用 artifact-first 规则；P2 如果要强化 Neo4j 读取，需要先补 graph-scoped read model。
+3. 语义搜索当前不是强语义召回，只适合作为 tutor analyze 的第一版候选概念检索入口。
 
-## 10. 阶段结束时必须更新的内容
+## 10. 测试结果
 
-完成阶段时，请在本文件补充：
-
-- `阶段状态`
-- `已完成接口`
-- `测试结果`
-- `遗留问题`
-- `交给 P2 的输入`
+1. 已执行：`c:/Users/Dyson/Documents/ControlTheoryMentor/.venv/Scripts/python.exe -m pytest backend/tests/unit/test_graph_service.py backend/tests/unit/test_node_service.py backend/tests/integration/test_node_api.py backend/tests/integration/test_graph_api.py backend/tests/integration/test_tutor_api.py -q`
+2. 结果：`28 passed`。
+3. 备注：存在 `21` 条 Pydantic V2 `Config` 旧写法告警，未阻塞本阶段交付，也不属于 P1 范围内功能缺陷。
 
 ## 11. 下一 session 启动提示词
 

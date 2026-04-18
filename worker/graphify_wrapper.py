@@ -114,6 +114,8 @@ def _emit_progress(
 class TextChunk:
     source_location: str
     text: str
+    page_start: int | None = None
+    page_end: int | None = None
 
 
 @dataclass(frozen=True)
@@ -213,6 +215,7 @@ class GraphifyProcessor:
         self.artifacts_root.mkdir(parents=True, exist_ok=True)
         self.llm_config = llm_config
         self._client: Any | None = None
+        self._source_chunks: list[dict[str, Any]] = []
 
     def process_pdf(
         self,
@@ -233,6 +236,7 @@ class GraphifyProcessor:
         output_dir = graph_root / "graphify-out"
         raw_dir.mkdir(parents=True, exist_ok=True)
         output_dir.mkdir(parents=True, exist_ok=True)
+        self._source_chunks = []
 
         _emit_progress(
             progress,
@@ -349,12 +353,17 @@ class GraphifyProcessor:
         )
         report_path = output_dir / "GRAPH_REPORT.md"
         graph_json_path = output_dir / "graph.json"
+        source_chunks_path = output_dir / "source_chunks.json"
         cypher_path = output_dir / "cypher.txt"
         html_path = output_dir / "graph.html"
         manifest_path = output_dir / "manifest.json"
 
         report_path.write_text(report, encoding="utf-8")
         to_json(graph, communities, str(graph_json_path))
+        source_chunks_path.write_text(
+            json.dumps({"chunks": self._source_chunks}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
         to_cypher(graph, str(cypher_path))
 
         try:
@@ -399,6 +408,7 @@ class GraphifyProcessor:
             "graph_id": graph_id,
             "graph_root": str(graph_root),
             "graph_json_path": str(graph_json_path),
+            "source_chunks_path": str(source_chunks_path),
             "report_path": str(report_path),
             "nodes_count": graph.number_of_nodes(),
             "edges_count": graph.number_of_edges(),
@@ -558,6 +568,7 @@ class GraphifyProcessor:
         partials = []
         total_chunks = len(chunks)
         for chunk_index, chunk in enumerate(chunks, start=1):
+            self._record_source_chunk(source_file, chunk_index, chunk)
             percent = self._semantic_chunk_percent(file_index, total_files, chunk_index, total_chunks)
             _emit_progress(
                 progress,
@@ -611,6 +622,7 @@ class GraphifyProcessor:
         partials = []
         total_chunks = len(chunks)
         for chunk_index, chunk in enumerate(chunks, start=1):
+            self._record_source_chunk(source_file, chunk_index, chunk)
             percent = self._semantic_chunk_percent(file_index, total_files, chunk_index, total_chunks)
             _emit_progress(
                 progress,
@@ -1547,7 +1559,7 @@ class GraphifyProcessor:
         end_page = pages[-1]["page"]
         location = f"P{start_page}" if start_page == end_page else f"P{start_page}-P{end_page}"
         text = "\n\n".join(page["text"] for page in pages)
-        return TextChunk(source_location=location, text=text)
+        return TextChunk(source_location=location, text=text, page_start=start_page, page_end=end_page)
 
     def _chunk_text(self, text: str, max_chunk_chars: int) -> list[TextChunk]:
         normalized = text.strip()
@@ -1574,6 +1586,18 @@ class GraphifyProcessor:
         if current_parts:
             chunks.append(TextChunk(source_location=f"chunk-{chunk_index}", text="\n\n".join(current_parts)))
         return chunks
+
+    def _record_source_chunk(self, source_file: str, chunk_index: int, chunk: TextChunk) -> None:
+        self._source_chunks.append(
+            {
+                "chunk_id": f"{_slug(Path(source_file).stem)}-{chunk_index}",
+                "source_file": source_file,
+                "source_location": chunk.source_location,
+                "page_start": chunk.page_start,
+                "page_end": chunk.page_end,
+                "text": chunk.text,
+            }
+        )
 
     def _empty_extraction(self) -> dict[str, Any]:
         return {

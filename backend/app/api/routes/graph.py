@@ -1,6 +1,4 @@
-"""
-Graph API routes for knowledge graph operations
-"""
+"""Graph API routes for knowledge graph operations."""
 from typing import Dict, Any, List
 import json
 from pathlib import Path
@@ -17,6 +15,7 @@ from app.schemas.graph import (
     RelationType
 )
 from app.config import settings
+from app.services.graph_service import GraphNotFoundError, GraphService, get_graph_service
 
 router = APIRouter(prefix="/graph", tags=["Graph"])
 
@@ -52,10 +51,10 @@ graph_storage = {
 graph_data_storage = {}
 
 
-@router.post("/create")
+@router.post("/create", deprecated=True)
 async def create_graph_elements(request: GraphCreateRequest):
     """
-    Create graph nodes and edges
+    Legacy demo endpoint for creating in-memory graph nodes and edges.
 
     - **nodes**: List of nodes to create
     - **edges**: List of edges to create
@@ -95,10 +94,10 @@ async def create_graph_elements(request: GraphCreateRequest):
     }
 
 
-@router.post("/query", response_model=GraphResponse)
+@router.post("/query", response_model=GraphResponse, deprecated=True)
 async def query_graph(request: GraphQueryRequest):
     """
-    Query the knowledge graph using Cypher-like syntax
+    Legacy demo endpoint for querying the in-memory graph store.
 
     - **query**: Query string
     - **parameters**: Optional query parameters
@@ -139,10 +138,10 @@ async def query_graph(request: GraphQueryRequest):
     )
 
 
-@router.post("/traverse")
+@router.post("/traverse", deprecated=True)
 async def traverse_graph(request: GraphTraversalRequest):
     """
-    Traverse the graph starting from a node
+    Legacy demo endpoint for traversing the in-memory graph store.
 
     - **start_node**: ID of the starting node
     - **direction**: Traversal direction (incoming, outgoing, both)
@@ -213,82 +212,23 @@ async def traverse_graph(request: GraphTraversalRequest):
 
 
 @router.get("/{graph_id}")
-async def get_graph(graph_id: str):
+async def get_graph(graph_id: str, graph_service: GraphService = Depends(get_graph_service)):
     """
     Get a knowledge graph by ID
 
     - **graph_id**: Graph identifier
     - Returns graph data with nodes and edges
     """
-    graph_json_path = GRAPH_DATA_DIR / graph_id / "graphify-out" / "graph.json"
-    if graph_json_path.exists():
-        with open(graph_json_path, "r", encoding="utf-8") as file_handle:
-            graph_data = json.load(file_handle)
-
-        nodes = []
-        for node in graph_data.get("nodes", []):
-            nodes.append({
-                "data": {
-                    "id": node["id"],
-                    "label": node.get("label", node["id"]),
-                    "type": node.get("file_type", "unknown"),
-                    "source_file": node.get("source_file", ""),
-                    "community": node.get("community"),
-                }
-            })
-
-        edges = []
-        for index, edge in enumerate(graph_data.get("links", []), start=1):
-            source = edge.get("_src", edge.get("source"))
-            target = edge.get("_tgt", edge.get("target"))
-            edges.append({
-                "data": {
-                    "id": edge.get("id", f"{source}-{edge.get('relation', 'related_to')}-{target}-{index}"),
-                    "source": source,
-                    "target": target,
-                    "label": edge.get("relation", "related_to"),
-                    "relation": edge.get("relation", "related_to"),
-                    "confidence": edge.get("confidence", "EXTRACTED"),
-                }
-            })
-
-        return {
-            "elements": {
-                "nodes": nodes,
-                "edges": edges,
-            },
-            "metadata": {
-                "graphId": graph_id,
-                "total_nodes": len(nodes),
-                "total_edges": len(edges),
-                "reportPath": str(graph_json_path.parent / "GRAPH_REPORT.md"),
-            },
-        }
-
-    # Fall back to legacy file format if no Graphify artifact exists.
-    graph_data = load_graph_data(graph_id)
-    if not graph_data.get("nodes") and not graph_data.get("edges"):
-        raise HTTPException(status_code=404, detail=f"Graph {graph_id} not found")
-
-    nodes_list = [{"data": node_data} for node_data in graph_data.get("nodes", {}).values()]
-    edges_list = [{"data": edge_data} for edge_data in graph_data.get("edges", {}).values()]
-    return {
-        "elements": {
-            "nodes": nodes_list,
-            "edges": edges_list,
-        },
-        "metadata": {
-            "graphId": graph_id,
-            "total_nodes": len(nodes_list),
-            "total_edges": len(edges_list),
-        },
-    }
+    try:
+        return graph_service.get_graph_view(graph_id)
+    except GraphNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/nodes/{node_id}")
+@router.get("/nodes/{node_id}", deprecated=True)
 async def get_node(node_id: str):
     """
-    Get a specific node by ID
+    Legacy demo endpoint for getting a specific node by ID.
 
     - **node_id**: Node identifier
     - Returns node details
@@ -302,13 +242,13 @@ async def get_node(node_id: str):
     return graph_storage["nodes"][node_id]
 
 
-@router.get("/nodes")
+@router.get("/nodes", deprecated=True)
 async def list_nodes(
     node_type: NodeType = None,
     limit: int = 100
 ):
     """
-    List all nodes with optional filtering
+    Legacy demo endpoint for listing in-memory nodes.
 
     - **node_type**: Optional filter by node type
     - **limit**: Maximum number of nodes to return
@@ -326,10 +266,10 @@ async def list_nodes(
     }
 
 
-@router.delete("/nodes/{node_id}")
+@router.delete("/nodes/{node_id}", deprecated=True)
 async def delete_node(node_id: str):
     """
-    Delete a node and its connected edges
+    Legacy demo endpoint for deleting in-memory nodes and edges.
 
     - **node_id**: Node identifier
     - Returns success message

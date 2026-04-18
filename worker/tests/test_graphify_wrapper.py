@@ -436,4 +436,5 @@ def test_process_pdf_builds_artifacts(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert result["input_tokens"] == 11
     assert result["output_tokens"] == 7
     assert Path(result["graph_json_path"]).exists()
+    assert Path(result["source_chunks_path"]).exists()
     assert Path(result["report_path"]).exists()
