@@ -24,11 +24,12 @@ from graphify.export import push_to_neo4j, to_cypher, to_html, to_json
 from graphify.extract import extract as extract_code
 from graphify.report import generate
 from graphify.validate import VALID_CONFIDENCES, VALID_FILE_TYPES, assert_valid
+from json_repair import repair_json
 from openai import APIConnectionError, APITimeoutError, OpenAI, OpenAIError, RateLimitError
 from openai.types.chat import ChatCompletion
 from pypdf import PdfReader
 
-ProgressCallback = Callable[[int, str], None]
+ProgressCallback = Callable[[int, str, dict[str, Any] | None], None]
 
 JSON_REPAIR_TEMPLATE = """
 The previous response was invalid for Graphify extraction.
@@ -98,6 +99,15 @@ class GraphifySemanticExtractionError(GraphifyProcessingError):
 
 class GraphifyTransientError(GraphifyProcessingError):
     """Raised for retryable provider failures."""
+
+
+def _emit_progress(
+    progress: ProgressCallback,
+    percent: int,
+    message: str,
+    **details: Any,
+) -> None:
+    progress(percent, message, details or None)
 
 
 @dataclass(frozen=True)
@@ -210,7 +220,7 @@ class GraphifyProcessor:
         graph_id: str,
         progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
-        progress = progress_callback or (lambda _percent, _message: None)
+        progress = progress_callback or (lambda _percent, _message, _details=None: None)
         source_pdf = Path(pdf_path)
         if not source_pdf.exists():
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
@@ -224,25 +234,58 @@ class GraphifyProcessor:
         raw_dir.mkdir(parents=True, exist_ok=True)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        progress(10, "Staging PDF into Graphify corpus...")
+        _emit_progress(
+            progress,
+            10,
+            "Staging PDF into Graphify corpus...",
+            stage="staging",
+            stageLabel="准备文件",
+            stageIndex=1,
+            stageTotal=6,
+        )
         staged_pdf = raw_dir / source_pdf.name
         shutil.copy2(source_pdf, staged_pdf)
 
-        progress(20, "Running Graphify detect stage...")
+        _emit_progress(
+            progress,
+            20,
+            "Running Graphify detect stage...",
+            stage="detect",
+            stageLabel="检测素材",
+            stageIndex=2,
+            stageTotal=6,
+            currentFile=staged_pdf.name,
+        )
         detection_result = detect(graph_root)
         (output_dir / ".graphify_detect.json").write_text(
             json.dumps(detection_result, indent=2),
             encoding="utf-8",
         )
 
-        progress(30, "Running Graphify AST extraction stage...")
+        _emit_progress(
+            progress,
+            30,
+            "Running Graphify AST extraction stage...",
+            stage="ast_extraction",
+            stageLabel="代码抽取",
+            stageIndex=3,
+            stageTotal=6,
+        )
         ast_extraction = self._extract_code_files(detection_result)
         (output_dir / ".graphify_ast.json").write_text(
             json.dumps(ast_extraction, indent=2),
             encoding="utf-8",
         )
 
-        progress(40, "Running Graphify semantic extraction stage...")
+        _emit_progress(
+            progress,
+            40,
+            "Running Graphify semantic extraction stage...",
+            stage="semantic_extraction",
+            stageLabel="语义抽取",
+            stageIndex=4,
+            stageTotal=6,
+        )
         semantic_extraction, cache_stats = self._extract_semantic_files(
             detection_result,
             graph_root,
@@ -260,7 +303,17 @@ class GraphifyProcessor:
             encoding="utf-8",
         )
 
-        progress(65, "Running Graphify build and cluster stages...")
+        _emit_progress(
+            progress,
+            65,
+            "Running Graphify build and cluster stages...",
+            stage="build_cluster",
+            stageLabel="构建图谱",
+            stageIndex=5,
+            stageTotal=6,
+            semanticCacheHits=cache_stats["hits"],
+            semanticCacheMisses=cache_stats["misses"],
+        )
         graph = build_from_json(merged_extraction)
         communities = cluster(graph)
         cohesion_scores = score_all(graph, communities)
@@ -269,7 +322,15 @@ class GraphifyProcessor:
         surprises = surprising_connections(graph, communities)
         questions = suggest_questions(graph, communities, community_labels)
 
-        progress(80, "Generating Graphify report and exports...")
+        _emit_progress(
+            progress,
+            80,
+            "Generating Graphify report and exports...",
+            stage="export",
+            stageLabel="生成报告",
+            stageIndex=6,
+            stageTotal=6,
+        )
         token_cost = {
             "input": merged_extraction.get("input_tokens", 0),
             "output": merged_extraction.get("output_tokens", 0),
@@ -305,7 +366,15 @@ class GraphifyProcessor:
 
         neo4j_summary = None
         if self.neo4j_uri and self.neo4j_user and self.neo4j_password:
-            progress(90, "Pushing Graphify graph to Neo4j...")
+            _emit_progress(
+                progress,
+                90,
+                "Pushing Graphify graph to Neo4j...",
+                stage="neo4j",
+                stageLabel="写入 Neo4j",
+                stageIndex=6,
+                stageTotal=6,
+            )
             try:
                 neo4j_summary = push_to_neo4j(
                     graph,
@@ -317,7 +386,15 @@ class GraphifyProcessor:
             except Exception:
                 neo4j_summary = None
 
-        progress(100, "Graphify processing completed.")
+        _emit_progress(
+            progress,
+            100,
+            "Graphify processing completed.",
+            stage="completed",
+            stageLabel="处理完成",
+            stageIndex=6,
+            stageTotal=6,
+        )
         return {
             "graph_id": graph_id,
             "graph_root": str(graph_root),
@@ -378,6 +455,19 @@ class GraphifyProcessor:
             "output_tokens": 0,
         }
 
+        _emit_progress(
+            progress,
+            41,
+            "Preparing semantic extraction plan...",
+            stage="semantic_extraction",
+            stageLabel="语义抽取",
+            stageIndex=4,
+            stageTotal=6,
+            totalFiles=len(semantic_paths),
+            cachedFiles=len(semantic_paths) - len(uncached),
+            pendingFiles=len(uncached),
+        )
+
         if not uncached:
             return cached_extraction, {"hits": len(semantic_paths), "misses": 0}
 
@@ -387,9 +477,41 @@ class GraphifyProcessor:
         for index, file_path in enumerate(uncached, start=1):
             base_percent = 40
             progress_span = 25
+            file_start_percent = base_percent + int(progress_span * (index - 1) / max(total_uncached, 1))
+            _emit_progress(
+                progress,
+                max(file_start_percent, 42),
+                f"Semantic extraction {index}/{total_uncached}: {Path(file_path).name}",
+                stage="semantic_extraction",
+                stageLabel="语义抽取",
+                stageIndex=4,
+                stageTotal=6,
+                currentFile=Path(file_path).name,
+                currentFileIndex=index,
+                totalFiles=total_uncached,
+            )
+            extracted.append(
+                self._extract_semantic_file(
+                    Path(file_path),
+                    graph_root,
+                    progress,
+                    file_index=index,
+                    total_files=total_uncached,
+                )
+            )
             percent = base_percent + int(progress_span * index / max(total_uncached, 1))
-            progress(percent, f"Semantic extraction {index}/{total_uncached}: {Path(file_path).name}")
-            extracted.append(self._extract_semantic_file(Path(file_path), graph_root))
+            _emit_progress(
+                progress,
+                percent,
+                f"Completed semantic extraction {index}/{total_uncached}: {Path(file_path).name}",
+                stage="semantic_extraction",
+                stageLabel="语义抽取",
+                stageIndex=4,
+                stageTotal=6,
+                currentFile=Path(file_path).name,
+                currentFileIndex=index,
+                totalFiles=total_uncached,
+            )
 
         new_extraction = self._merge_extractions(*extracted)
         save_semantic_cache(
@@ -402,30 +524,64 @@ class GraphifyProcessor:
         merged = self._merge_extractions(cached_extraction, new_extraction)
         return merged, {"hits": len(semantic_paths) - len(uncached), "misses": len(uncached)}
 
-    def _extract_semantic_file(self, file_path: Path, graph_root: Path) -> dict[str, Any]:
+    def _extract_semantic_file(
+        self,
+        file_path: Path,
+        graph_root: Path,
+        progress: ProgressCallback,
+        *,
+        file_index: int,
+        total_files: int,
+    ) -> dict[str, Any]:
         suffix = file_path.suffix.lower()
         if suffix == ".pdf":
-            return self._extract_paper(file_path, graph_root)
+            return self._extract_paper(file_path, graph_root, progress, file_index=file_index, total_files=total_files)
         if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}:
-            return self._extract_image(file_path, graph_root)
-        return self._extract_document(file_path, graph_root)
+            return self._extract_image(file_path, graph_root, progress, file_index=file_index, total_files=total_files)
+        return self._extract_document(file_path, graph_root, progress, file_index=file_index, total_files=total_files)
 
-    def _extract_paper(self, pdf_path: Path, graph_root: Path) -> dict[str, Any]:
+    def _extract_paper(
+        self,
+        pdf_path: Path,
+        graph_root: Path,
+        progress: ProgressCallback,
+        *,
+        file_index: int,
+        total_files: int,
+    ) -> dict[str, Any]:
         pages = self._read_pdf_pages(pdf_path)
         if not pages:
             raise ValueError(f"No extractable text found in {pdf_path.name}")
 
         source_file = pdf_path.relative_to(graph_root).as_posix()
         chunks = self._chunk_pages(pages, self._require_llm_config().max_chunk_chars)
-        partials = [
-            self._extract_text_chunk(
-                file_label=pdf_path.stem,
-                file_type="paper",
-                source_file=source_file,
-                chunk=chunk,
+        partials = []
+        total_chunks = len(chunks)
+        for chunk_index, chunk in enumerate(chunks, start=1):
+            percent = self._semantic_chunk_percent(file_index, total_files, chunk_index, total_chunks)
+            _emit_progress(
+                progress,
+                percent,
+                f"Extracting semantic chunk {chunk_index}/{total_chunks} from {pdf_path.name}",
+                stage="semantic_extraction",
+                stageLabel="语义抽取",
+                stageIndex=4,
+                stageTotal=6,
+                currentFile=pdf_path.name,
+                currentFileIndex=file_index,
+                totalFiles=total_files,
+                currentChunkIndex=chunk_index,
+                totalChunks=total_chunks,
+                sourceLocation=chunk.source_location,
             )
-            for chunk in chunks
-        ]
+            partials.append(
+                self._extract_text_chunk(
+                    file_label=pdf_path.stem,
+                    file_type="paper",
+                    source_file=source_file,
+                    chunk=chunk,
+                )
+            )
         extraction = self._merge_extractions(*partials)
         extraction = self._attach_file_node(
             extraction,
@@ -437,23 +593,49 @@ class GraphifyProcessor:
         assert_valid(extraction)
         return extraction
 
-    def _extract_document(self, doc_path: Path, graph_root: Path) -> dict[str, Any]:
+    def _extract_document(
+        self,
+        doc_path: Path,
+        graph_root: Path,
+        progress: ProgressCallback,
+        *,
+        file_index: int,
+        total_files: int,
+    ) -> dict[str, Any]:
         metadata, text = _read_frontmatter(doc_path)
         source_file = doc_path.relative_to(graph_root).as_posix()
         chunks = self._chunk_text(text, self._require_llm_config().max_chunk_chars)
         if not chunks:
             raise ValueError(f"No extractable text found in {doc_path.name}")
 
-        partials = [
-            self._extract_text_chunk(
-                file_label=doc_path.stem,
-                file_type="document",
-                source_file=source_file,
-                chunk=chunk,
-                node_metadata=metadata,
+        partials = []
+        total_chunks = len(chunks)
+        for chunk_index, chunk in enumerate(chunks, start=1):
+            percent = self._semantic_chunk_percent(file_index, total_files, chunk_index, total_chunks)
+            _emit_progress(
+                progress,
+                percent,
+                f"Extracting semantic chunk {chunk_index}/{total_chunks} from {doc_path.name}",
+                stage="semantic_extraction",
+                stageLabel="语义抽取",
+                stageIndex=4,
+                stageTotal=6,
+                currentFile=doc_path.name,
+                currentFileIndex=file_index,
+                totalFiles=total_files,
+                currentChunkIndex=chunk_index,
+                totalChunks=total_chunks,
+                sourceLocation=chunk.source_location,
             )
-            for chunk in chunks
-        ]
+            partials.append(
+                self._extract_text_chunk(
+                    file_label=doc_path.stem,
+                    file_type="document",
+                    source_file=source_file,
+                    chunk=chunk,
+                    node_metadata=metadata,
+                )
+            )
         extraction = self._merge_extractions(*partials)
         extraction = self._attach_file_node(
             extraction,
@@ -466,11 +648,35 @@ class GraphifyProcessor:
         assert_valid(extraction)
         return extraction
 
-    def _extract_image(self, image_path: Path, graph_root: Path) -> dict[str, Any]:
+    def _extract_image(
+        self,
+        image_path: Path,
+        graph_root: Path,
+        progress: ProgressCallback,
+        *,
+        file_index: int,
+        total_files: int,
+    ) -> dict[str, Any]:
         source_file = image_path.relative_to(graph_root).as_posix()
         mime_type, _ = mimetypes.guess_type(image_path.name)
         if mime_type is None:
             mime_type = "image/png"
+
+        _emit_progress(
+            progress,
+            self._semantic_chunk_percent(file_index, total_files, 1, 1),
+            f"Extracting semantic content from image {image_path.name}",
+            stage="semantic_extraction",
+            stageLabel="语义抽取",
+            stageIndex=4,
+            stageTotal=6,
+            currentFile=image_path.name,
+            currentFileIndex=file_index,
+            totalFiles=total_files,
+            currentChunkIndex=1,
+            totalChunks=1,
+            sourceLocation="image",
+        )
 
         image_b64 = base64.b64encode(image_path.read_bytes()).decode("ascii")
         prompt = self._build_chunk_prompt(
@@ -500,6 +706,22 @@ class GraphifyProcessor:
         )
         assert_valid(extraction)
         return extraction
+
+    def _semantic_chunk_percent(
+        self,
+        file_index: int,
+        total_files: int,
+        chunk_index: int,
+        total_chunks: int,
+    ) -> int:
+        base_percent = 40
+        progress_span = 25
+        file_start = base_percent + (progress_span * (file_index - 1) / max(total_files, 1))
+        file_end = base_percent + (progress_span * file_index / max(total_files, 1))
+        if total_chunks <= 1:
+            return max(int(file_start), 42)
+        ratio = (chunk_index - 1) / max(total_chunks, 1)
+        return max(int(file_start + ((file_end - file_start) * ratio)), 42)
 
     def _extract_text_chunk(
         self,
@@ -536,17 +758,22 @@ class GraphifyProcessor:
         image_payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         config = self._require_llm_config()
-        attempts = 2
+        attempts = 3
         total_input_tokens = 0
         total_output_tokens = 0
         repair_error: str | None = None
+        invalid_content: str | None = None
 
         for _attempt in range(attempts):
             try:
                 prompt_with_repair = (
                     prompt
                     if repair_error is None
-                    else f"{prompt}\n\n{JSON_REPAIR_TEMPLATE.format(error=repair_error)}"
+                    else self._build_json_repair_prompt(
+                        original_prompt=prompt,
+                        invalid_content=invalid_content,
+                        error=repair_error,
+                    )
                 )
                 content, input_tokens, output_tokens = self._request_semantic_completion(
                     config,
@@ -560,6 +787,8 @@ class GraphifyProcessor:
             total_output_tokens += output_tokens
             try:
                 payload = self._parse_json_payload(content)
+                if self._payload_needs_repair_retry(payload, content):
+                    raise ValueError("Locally repaired payload appears truncated; requesting repaired JSON response.")
                 extraction = self._normalize_semantic_payload(
                     payload,
                     source_file=source_file,
@@ -573,6 +802,7 @@ class GraphifyProcessor:
                 return extraction
             except (json.JSONDecodeError, ValueError, KeyError) as exc:
                 repair_error = str(exc)
+                invalid_content = content
 
         raise GraphifySemanticExtractionError(
             f"Model could not return valid Graphify extraction for {source_file}: {repair_error}"
@@ -825,6 +1055,33 @@ class GraphifyProcessor:
             ">>>"
         )
 
+    def _build_json_repair_prompt(
+        self,
+        *,
+        original_prompt: str,
+        invalid_content: str | None,
+        error: str,
+    ) -> str:
+        invalid_excerpt = (invalid_content or "").strip()
+        if invalid_excerpt:
+            invalid_excerpt = invalid_excerpt[:12000]
+            if invalid_content and len(invalid_content) > 12000:
+                invalid_excerpt += "\n...[truncated]"
+            return (
+                "The previous Graphify extraction response was malformed JSON. "
+                "Repair the previous response into exactly one valid JSON object with keys "
+                "nodes, edges, hyperedges, input_tokens, output_tokens. "
+                "Return JSON only. Do not include markdown or commentary.\n\n"
+                f"Validation error: {error}\n\n"
+                "Original extraction prompt:\n"
+                f"{original_prompt}\n\n"
+                "Previous invalid response:\n<<<\n"
+                f"{invalid_excerpt}\n"
+                ">>>"
+            )
+
+        return f"{original_prompt}\n\n{JSON_REPAIR_TEMPLATE.format(error=error)}"
+
     def _build_chunk_prompt(
         self,
         *,
@@ -1050,16 +1307,208 @@ class GraphifyProcessor:
         }
 
     def _parse_json_payload(self, content: str) -> dict[str, Any]:
+        stripped = self._strip_json_wrappers(content)
+        candidates = self._json_object_candidates(stripped)
+        last_error: json.JSONDecodeError | None = None
+
+        for candidate in candidates:
+            for prepared in self._prepare_json_candidates(candidate):
+                try:
+                    return self._load_json_object(prepared)
+                except json.JSONDecodeError as exc:
+                    last_error = exc
+
+            repaired = self._repair_json_candidate(candidate)
+            if repaired is None:
+                continue
+            try:
+                return self._load_json_object(repaired)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+
+        if stripped and stripped not in candidates:
+            repaired = self._repair_json_candidate(stripped)
+            if repaired is not None:
+                try:
+                    return self._load_json_object(repaired)
+                except json.JSONDecodeError as exc:
+                    last_error = exc
+
+        if last_error is not None:
+            raise last_error
+        raise json.JSONDecodeError("No JSON object found", stripped, 0)
+
+    def _payload_needs_repair_retry(self, payload: dict[str, Any], raw_content: str) -> bool:
+        nodes = payload.get("nodes", [])
+        edges = payload.get("edges", []) or payload.get("links", [])
+        hyperedges = payload.get("hyperedges", [])
+
+        if not isinstance(nodes, list) or not nodes:
+            return False
+        if isinstance(edges, list) and edges:
+            return False
+        if isinstance(hyperedges, list) and hyperedges:
+            return False
+
+        lowered = raw_content.lower()
+        mentions_edge_content = any(token in lowered for token in ('"edges"', '"links"', '"relation"', '"source"', '"target"'))
+        if not mentions_edge_content:
+            return False
+
+        unbalanced_braces = lowered.count("{") != lowered.count("}")
+        unbalanced_brackets = lowered.count("[") != lowered.count("]")
+        malformed_edge_markers = any(
+            marker in lowered
+            for marker in ('"edges":[}', '"edges": [}', '"links":[}', '"links": [}', ',]', ',}')
+        )
+        trailing_truncation = lowered.rstrip().endswith(("{", "[", ",", ":"))
+
+        return unbalanced_braces or unbalanced_brackets or malformed_edge_markers or trailing_truncation
+
+    def _strip_json_wrappers(self, content: str) -> str:
         stripped = content.strip()
         if stripped.startswith("```"):
-            stripped = stripped.strip("`")
-            if stripped.startswith("json"):
-                stripped = stripped[4:].strip()
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start == -1 or end == -1 or end < start:
-            raise json.JSONDecodeError("No JSON object found", stripped, 0)
-        return json.loads(stripped[start : end + 1])
+            stripped = re.sub(r"^```(?:json)?\s*", "", stripped, count=1, flags=re.IGNORECASE)
+            stripped = re.sub(r"\s*```$", "", stripped, count=1)
+        return stripped.strip()
+
+    def _json_object_candidates(self, content: str) -> list[str]:
+        candidates: list[str] = []
+        if not content:
+            return candidates
+
+        start_index: int | None = None
+        stack: list[str] = []
+        in_string = False
+        escape = False
+
+        for index, char in enumerate(content):
+            if start_index is None:
+                if char == "{":
+                    start_index = index
+                    stack = [char]
+                continue
+
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char in "[{":
+                stack.append(char)
+            elif char in "]}":
+                if stack:
+                    expected = "{" if char == "}" else "["
+                    if stack[-1] == expected:
+                        stack.pop()
+                if not stack and start_index is not None:
+                    candidates.append(content[start_index : index + 1].strip())
+                    start_index = None
+
+        if start_index is not None:
+            candidates.append(content[start_index:].strip())
+
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end != -1 and end >= start:
+            candidates.append(content[start : end + 1].strip())
+
+        unique_candidates: list[str] = []
+        seen: set[str] = set()
+        for candidate in sorted(candidates, key=len, reverse=True):
+            if candidate and candidate not in seen:
+                unique_candidates.append(candidate)
+                seen.add(candidate)
+        return unique_candidates
+
+    def _prepare_json_candidates(self, candidate: str) -> list[str]:
+        variants = [candidate]
+        cleaned = self._cleanup_json_candidate(candidate)
+        if cleaned != candidate:
+            variants.append(cleaned)
+        balanced = self._balance_json_candidate(cleaned)
+        if balanced not in variants:
+            variants.append(balanced)
+
+        prepared: list[str] = []
+        seen: set[str] = set()
+        for variant in variants:
+            if variant and variant not in seen:
+                prepared.append(variant)
+                seen.add(variant)
+        return prepared
+
+    def _cleanup_json_candidate(self, candidate: str) -> str:
+        cleaned = candidate.strip().replace("\ufeff", "")
+        translation = str.maketrans({
+            "“": '"',
+            "”": '"',
+            "‘": "'",
+            "’": "'",
+        })
+        cleaned = cleaned.translate(translation)
+        cleaned = cleaned.replace("\x00", "")
+        cleaned = re.sub(r",\s*(?=[}\]])", "", cleaned)
+        cleaned = re.sub(r"^\s*json\s*", "", cleaned, flags=re.IGNORECASE)
+        return cleaned.strip()
+
+    def _balance_json_candidate(self, candidate: str) -> str:
+        stack: list[str] = []
+        in_string = False
+        escape = False
+
+        for char in candidate:
+            if in_string:
+                if escape:
+                    escape = False
+                elif char == "\\":
+                    escape = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char in "[{":
+                stack.append(char)
+            elif char in "]}" and stack:
+                expected = "{" if char == "}" else "["
+                if stack[-1] == expected:
+                    stack.pop()
+
+        balanced = candidate.rstrip()
+        if in_string:
+            balanced += '"'
+        if balanced.endswith(","):
+            balanced = balanced[:-1].rstrip()
+        if stack:
+            closers = "".join("}" if opener == "{" else "]" for opener in reversed(stack))
+            balanced += closers
+        return balanced
+
+    def _repair_json_candidate(self, candidate: str) -> str | None:
+        try:
+            repaired = repair_json(candidate)
+        except Exception:
+            return None
+
+        if isinstance(repaired, (dict, list)):
+            return json.dumps(repaired, ensure_ascii=False)
+        if isinstance(repaired, str):
+            return repaired.strip()
+        return None
+
+    def _load_json_object(self, candidate: str) -> dict[str, Any]:
+        payload = json.loads(candidate)
+        if not isinstance(payload, dict):
+            raise json.JSONDecodeError("JSON root is not an object", candidate, 0)
+        return payload
 
     def _require_llm_config(self) -> LLMConfig:
         if self.llm_config is None:

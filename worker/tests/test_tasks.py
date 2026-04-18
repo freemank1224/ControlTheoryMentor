@@ -20,7 +20,7 @@ def test_process_pdf_task_run_success(monkeypatch: pytest.MonkeyPatch, tmp_path:
             self.kwargs = kwargs
 
         def process_pdf(self, pdf_path: str, graph_id: str, progress_callback):
-            progress_callback(50, "working")
+            progress_callback(50, "working", {"stage": "semantic_extraction", "currentChunkIndex": 2, "totalChunks": 4})
             return {
                 "nodes_count": 4,
                 "edges_count": 6,
@@ -51,6 +51,8 @@ def test_process_pdf_task_run_success(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert result["graph_id"] == "graph-task-1"
     assert result["result"]["input_tokens"] == 123
     assert updates[-1][0] == "PROGRESS"
+    assert updates[-1][1]["stage"] == "semantic_extraction"
+    assert updates[-1][1]["currentChunkIndex"] == 2
 
 
 def test_process_pdf_task_run_raises_missing_file(tmp_path: Path) -> None:

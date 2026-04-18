@@ -231,6 +231,132 @@ def test_run_semantic_completion_repairs_anthropic_thinking_only_response() -> N
     assert len(extraction["nodes"]) == 2
 
 
+def test_run_semantic_completion_repairs_invalid_json_response() -> None:
+    processor = GraphifyProcessor(
+        neo4j_uri="",
+        neo4j_user="",
+        neo4j_password="",
+        llm_config=LLMConfig(
+            api_key="test-key",
+            model="test-model",
+            base_url=None,
+            timeout_seconds=30,
+            max_chunk_chars=1000,
+            max_output_tokens=500,
+        ),
+    )
+
+    responses = [
+        '{"nodes":[{"id":"paper_1","label":"Control System","file_type":"paper"}],"edges":[}',
+        json.dumps(
+            {
+                "nodes": [
+                    {"id": "paper_1", "label": "Control System", "file_type": "paper"},
+                    {"id": "concept_1", "label": "State Space", "file_type": "paper"},
+                ],
+                "edges": [
+                    {
+                        "source": "paper_1",
+                        "target": "concept_1",
+                        "relation": "mentions",
+                        "confidence": "EXTRACTED",
+                        "confidence_score": 1.0,
+                    }
+                ],
+                "hyperedges": [],
+            }
+        ),
+    ]
+
+    class FakeOpenAIClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            content = responses[len(self.calls) - 1]
+            return SimpleNamespace(
+                usage=SimpleNamespace(prompt_tokens=11, completion_tokens=13),
+                choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+            )
+
+    fake_client = FakeOpenAIClient()
+    processor._client = fake_client
+
+    extraction = processor._run_semantic_completion(
+        "Return JSON",
+        source_file="raw/sample.pdf",
+        file_type="paper",
+        source_location="P1",
+        node_metadata={},
+    )
+
+    assert len(fake_client.calls) == 2
+    assert extraction["edges"][0]["relation"] == "mentions"
+
+
+def test_run_semantic_completion_repairs_common_json_locally() -> None:
+        processor = GraphifyProcessor(
+                neo4j_uri="",
+                neo4j_user="",
+                neo4j_password="",
+                llm_config=LLMConfig(
+                        api_key="test-key",
+                        model="test-model",
+                        base_url=None,
+                        timeout_seconds=30,
+                        max_chunk_chars=1000,
+                        max_output_tokens=500,
+                ),
+        )
+
+        malformed_response = """```json
+        {
+            "nodes": [
+                {"id": "paper_1", "label": "Control System", "file_type": "paper"},
+                {"id": "concept_1", "label": "State Space", "file_type": "paper"}
+            ],
+            "edges": [
+                {
+                    "source": "paper_1",
+                    "target": "concept_1",
+                    "relation": "mentions",
+                    "confidence": "EXTRACTED",
+                    "confidence_score": 1.0,
+                }
+            ],
+            "hyperedges": []
+        """
+
+        class FakeOpenAIClient:
+                def __init__(self) -> None:
+                        self.calls: list[dict[str, object]] = []
+                        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+                def create(self, **kwargs):
+                        self.calls.append(kwargs)
+                        return SimpleNamespace(
+                                usage=SimpleNamespace(prompt_tokens=11, completion_tokens=13),
+                                choices=[SimpleNamespace(message=SimpleNamespace(content=malformed_response))],
+                        )
+
+        fake_client = FakeOpenAIClient()
+        processor._client = fake_client
+
+        extraction = processor._run_semantic_completion(
+                "Return JSON",
+                source_file="raw/sample.pdf",
+                file_type="paper",
+                source_location="P1",
+                node_metadata={},
+        )
+
+        assert len(fake_client.calls) == 1
+        assert len(extraction["nodes"]) == 2
+        assert extraction["edges"][0]["relation"] == "mentions"
+
+
 def test_process_pdf_builds_artifacts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\n%mock\n")

@@ -5,6 +5,23 @@ interface UploadCardProps {
   onUploadComplete?: (taskId: string, graphId: string) => void;
 }
 
+interface TaskProgressDetails {
+  stage?: string;
+  stageLabel?: string;
+  stageIndex?: number;
+  stageTotal?: number;
+  currentFile?: string;
+  currentFileIndex?: number;
+  totalFiles?: number;
+  currentChunkIndex?: number;
+  totalChunks?: number;
+  sourceLocation?: string;
+  cachedFiles?: number;
+  pendingFiles?: number;
+  semanticCacheHits?: number;
+  semanticCacheMisses?: number;
+}
+
 function resolveWebSocketUrl(taskId: string): string {
   const explicitWsBase = import.meta.env.VITE_WS_BASE_URL;
   if (explicitWsBase) {
@@ -25,8 +42,55 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [progressDetails, setProgressDetails] = useState<TaskProgressDetails>({});
+  const [pdfId, setPdfId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const completedTaskRef = useRef<string | null>(null);
+
+  const applyProgressUpdate = (data: Record<string, unknown>) => {
+    setProgress(typeof data.percent === 'number' ? data.percent : 0);
+    setMessage(typeof data.message === 'string' ? data.message : '处理中...');
+    setProgressDetails({
+      stage: typeof data.stage === 'string' ? data.stage : undefined,
+      stageLabel: typeof data.stageLabel === 'string' ? data.stageLabel : undefined,
+      stageIndex: typeof data.stageIndex === 'number' ? data.stageIndex : undefined,
+      stageTotal: typeof data.stageTotal === 'number' ? data.stageTotal : undefined,
+      currentFile: typeof data.currentFile === 'string' ? data.currentFile : undefined,
+      currentFileIndex: typeof data.currentFileIndex === 'number' ? data.currentFileIndex : undefined,
+      totalFiles: typeof data.totalFiles === 'number' ? data.totalFiles : undefined,
+      currentChunkIndex: typeof data.currentChunkIndex === 'number' ? data.currentChunkIndex : undefined,
+      totalChunks: typeof data.totalChunks === 'number' ? data.totalChunks : undefined,
+      sourceLocation: typeof data.sourceLocation === 'string' ? data.sourceLocation : undefined,
+      cachedFiles: typeof data.cachedFiles === 'number' ? data.cachedFiles : undefined,
+      pendingFiles: typeof data.pendingFiles === 'number' ? data.pendingFiles : undefined,
+      semanticCacheHits: typeof data.semanticCacheHits === 'number' ? data.semanticCacheHits : undefined,
+      semanticCacheMisses: typeof data.semanticCacheMisses === 'number' ? data.semanticCacheMisses : undefined,
+    });
+  };
+
+  const handleTaskCompleted = (activeTaskId: string, graphId: string) => {
+    if (completedTaskRef.current === activeTaskId) {
+      return;
+    }
+
+    completedTaskRef.current = activeTaskId;
+    setProgress(100);
+    setMessage('处理完成！');
+    setErrorMessage(null);
+    setProgressDetails({
+      stage: 'completed',
+      stageLabel: '处理完成'
+    });
+    setUploading(false);
+    onUploadComplete?.(activeTaskId, graphId || activeTaskId);
+  };
+
+  const handleTaskFailed = (error: string) => {
+    setErrorMessage('处理失败：' + error);
+    setUploading(false);
+  };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -37,18 +101,29 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
       return;
     }
 
+    setErrorMessage(null);
     setUploading(true);
     setProgress(0);
+    setPdfId(null);
+    setTaskId(null);
+    completedTaskRef.current = null;
     setMessage('正在上传...');
+    setProgressDetails({
+      stage: 'upload',
+      stageLabel: '上传文件'
+    });
 
     try {
       const result = await apiClient.uploadPDF(file);
+      setPdfId(result.id);
       setTaskId(result.taskId);
       setMessage('处理中...');
     } catch (error) {
-      setMessage('上传失败：' + (error as Error).message);
+      setErrorMessage('上传失败：' + (error as Error).message);
       setUploading(false);
     }
+
+    event.target.value = '';
   };
 
   // Handle WebSocket connection separately
@@ -65,16 +140,11 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'task.progress') {
-            setProgress(data.data.percent || 0);
-            setMessage(data.data.message || '处理中...');
+            applyProgressUpdate(data.data);
           } else if (data.type === 'task.completed') {
-            setProgress(100);
-            setMessage('处理完成！');
-            setUploading(false);
-            onUploadComplete?.(taskId, data.data.graphId || taskId);
+            handleTaskCompleted(taskId, data.data.graphId || taskId);
           } else if (data.type === 'task.failed') {
-            setMessage('处理失败：' + data.data.error);
-            setUploading(false);
+            handleTaskFailed(data.data.error);
           }
         } catch (error) {
           console.error('Failed to parse WebSocket message:', error);
@@ -94,6 +164,48 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
       };
     }
   }, [taskId, uploading, onUploadComplete]);
+
+  useEffect(() => {
+    if (!pdfId || !taskId || !uploading) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollStatus = async () => {
+      try {
+        const status = await apiClient.getPDFStatus(pdfId);
+        if (cancelled) {
+          return;
+        }
+
+        const taskInfo = status.task_info;
+        if (status.task_status === 'SUCCESS') {
+          handleTaskCompleted(taskId, status.graph_id || (typeof taskInfo?.graph_id === 'string' ? taskInfo.graph_id : taskId));
+          return;
+        }
+
+        if (status.task_status === 'FAILURE') {
+          handleTaskFailed(typeof status.task_error === 'string' ? status.task_error : '解析任务失败');
+          return;
+        }
+
+        if (taskInfo && typeof taskInfo === 'object') {
+          applyProgressUpdate(taskInfo as Record<string, unknown>);
+        }
+      } catch (error) {
+        console.error('Failed to poll PDF status:', error);
+      }
+    };
+
+    pollStatus();
+    const intervalId = window.setInterval(pollStatus, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [pdfId, taskId, uploading]);
 
   return (
     <div style={{
@@ -164,6 +276,60 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
           }}>
             {message} ({progress}%)
           </p>
+
+          <div style={{
+            marginTop: '0.75rem',
+            padding: '0.75rem 1rem',
+            backgroundColor: 'var(--bg-warm-sand)',
+            borderRadius: 'var(--btn-radius)',
+            fontSize: '0.875rem',
+            color: 'var(--text-primary)',
+            lineHeight: 1.5,
+            fontFamily: 'Inter, sans-serif'
+          }}>
+            <div><strong>当前阶段：</strong>{progressDetails.stageLabel || '处理中'}</div>
+            {typeof progressDetails.stageIndex === 'number' && typeof progressDetails.stageTotal === 'number' && (
+              <div>阶段进度：{progressDetails.stageIndex}/{progressDetails.stageTotal}</div>
+            )}
+            {progressDetails.currentFile && (
+              <div>当前文件：{progressDetails.currentFile}</div>
+            )}
+            {typeof progressDetails.currentFileIndex === 'number' && typeof progressDetails.totalFiles === 'number' && (
+              <div>文件进度：{progressDetails.currentFileIndex}/{progressDetails.totalFiles}</div>
+            )}
+            {typeof progressDetails.currentChunkIndex === 'number' && typeof progressDetails.totalChunks === 'number' && (
+              <div>分块进度：{progressDetails.currentChunkIndex}/{progressDetails.totalChunks}</div>
+            )}
+            {progressDetails.sourceLocation && (
+              <div>当前位置：{progressDetails.sourceLocation}</div>
+            )}
+            {typeof progressDetails.cachedFiles === 'number' && typeof progressDetails.pendingFiles === 'number' && (
+              <div>抽取计划：缓存命中 {progressDetails.cachedFiles}，待处理 {progressDetails.pendingFiles}</div>
+            )}
+            {typeof progressDetails.semanticCacheHits === 'number' && typeof progressDetails.semanticCacheMisses === 'number' && (
+              <div>抽取结果：缓存命中 {progressDetails.semanticCacheHits}，新抽取 {progressDetails.semanticCacheMisses}</div>
+            )}
+            {taskId && <div>任务 ID：{taskId}</div>}
+          </div>
+        </div>
+      )}
+
+      {!uploading && errorMessage && (
+        <div style={{
+          marginTop: '1rem',
+          padding: '0.75rem 1rem',
+          borderRadius: 'var(--btn-radius)',
+          backgroundColor: '#FDECEC',
+          border: '1px solid #E6B8B8',
+          color: '#8A2F2F',
+          fontSize: '0.875rem',
+          lineHeight: 1.5,
+          fontFamily: 'Inter, sans-serif'
+        }}>
+          <strong>处理失败</strong>
+          <div>{errorMessage}</div>
+          {progress > 0 && <div>失败前进度：{progress}%</div>}
+          {taskId && <div>任务 ID：{taskId}</div>}
         </div>
       )}
     </div>

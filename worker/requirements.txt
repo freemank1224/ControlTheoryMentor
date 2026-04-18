@@ -10,6 +10,7 @@ neo4j==5.15.0
 # Graphify pipeline
 graphifyy[pdf,neo4j]==0.4.21
 openai==1.76.0
+json-repair>=0.39,<1
 
 # Testing
 pytest==7.4.4

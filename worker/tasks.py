@@ -29,15 +29,18 @@ def process_pdf_task(
     """Process a PDF into Graphify artifacts and optional Neo4j state."""
     logger.info("Processing PDF task %s: %s", task_id, pdf_path)
 
-    def report_progress(percent: int, message: str) -> None:
+    def report_progress(percent: int, message: str, details: dict[str, Any] | None = None) -> None:
+        meta = {
+            "task_id": task_id,
+            "status": "processing",
+            "percent": percent,
+            "message": message,
+        }
+        if details:
+            meta.update(details)
         self.update_state(
             state="PROGRESS",
-            meta={
-                "task_id": task_id,
-                "status": "processing",
-                "percent": percent,
-                "message": message,
-            },
+            meta=meta,
         )
 
     try:

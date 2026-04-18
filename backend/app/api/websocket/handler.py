@@ -124,14 +124,33 @@ class ConnectionManager:
                     }
                 elif state in {"STARTED", "PROGRESS", "RETRY"}:
                     info = task_result.info if isinstance(task_result.info, dict) else {}
+                    data = {
+                        "taskId": task_id,
+                        "percent": int(info.get("percent", 5 if state == "STARTED" else 0)),
+                        "message": info.get("message", "Graphify 正在处理文档..."),
+                        "status": info.get("status", state.lower()),
+                    }
+                    for key in (
+                        "stage",
+                        "stageLabel",
+                        "stageIndex",
+                        "stageTotal",
+                        "currentFile",
+                        "currentFileIndex",
+                        "totalFiles",
+                        "currentChunkIndex",
+                        "totalChunks",
+                        "sourceLocation",
+                        "cachedFiles",
+                        "pendingFiles",
+                        "semanticCacheHits",
+                        "semanticCacheMisses",
+                    ):
+                        if key in info:
+                            data[key] = info[key]
                     payload = {
                         "type": "task.progress",
-                        "data": {
-                            "taskId": task_id,
-                            "percent": int(info.get("percent", 5 if state == "STARTED" else 0)),
-                            "message": info.get("message", "Graphify 正在处理文档..."),
-                            "status": info.get("status", state.lower()),
-                        },
+                        "data": data,
                     }
                 elif state == "SUCCESS":
                     result = task_result.result if isinstance(task_result.result, dict) else {}
