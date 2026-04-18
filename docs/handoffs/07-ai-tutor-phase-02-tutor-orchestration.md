@@ -153,22 +153,27 @@ P3 开始前必须能从本阶段拿到：
 
 ### 测试结果
 
-- `cd backend; ../.venv/Scripts/python.exe -m pytest tests/integration/test_tutor_api.py tests/unit/test_tutor_schema.py -q`
-- 结果：`27 passed, 21 warnings`
+- `cd backend; ../.venv/Scripts/python.exe -m pytest tests/unit/test_session_service.py tests/integration/test_tutor_api.py tests/unit/test_tutor_schema.py -q`
+- 宿主机结果：`33 passed, 1 skipped, 21 warnings`
+- `docker compose exec backend python -m pytest tests/unit/test_session_service.py tests/integration/test_tutor_api.py tests/unit/test_tutor_schema.py -q`
+- 容器结果：`34 passed, 21 warnings`
 - 当前 warnings 为既有 Pydantic v2 class-based config deprecation，未在本批次处理
+- 新增真实 Redis online 集成覆盖：用 Redis-backed `SessionService` 启动 session，再用新的 `TutorService` 实例恢复并继续 `get/list/respond` 流程
+- 新增 transient outage 覆盖：同一个 `FailoverSessionService` 实例在 primary store 报 `RedisError` 时自动切到 `memory-fallback`，后续操作检测 Redis 恢复后自动回写 fallback session 并切回 primary backend
 
 ### 遗留问题
 
-- 目前只验证了 tutor 定向 API 与 schema；尚未补 session restart/recovery 的更完整集成验证
-- Redis fallback 已实现，但还没有针对真实 Redis online 场景补专门测试
 - `chat / quiz / solve` 仍然是轻量模板实现，不属于本批次的 graph-grounded orchestration 深化范围
-- P2 全阶段仍未完成，后续还需要继续收敛 recovery 行为与面向 P3 的消费契约稳定性
+- 当前 fallback 仍是进程内内存镜像，只能覆盖单 backend 进程内的短暂 Redis 故障；如果 backend 进程同时重启，fallback session 仍不会跨进程持久化
+- P2 交付面已基本完成，后续主要是为 P3 消费 content request / content artifact 链路继续收敛接口稳定性
 
 ### 交给 P3 的 content request 契约
 
 - 位置：每个 `TeachingStep.content.contentRequest`
-- 当前字段：`stage`、`primaryConceptId`、`conceptIds`、`highlightedNodeIds`、`evidencePassageIds`、`renderHint`、`learnerLevel`
-- 当前用途：为 P3 内容生成器提供 step 级内容请求骨架，使其可基于图谱节点高亮与证据片段生成更具体的教学内容
+- 当前字段：`stage`、`stepId`、`stepTitle`、`objective`、`question`、`graphId`、`sessionMode`、`learnerLevel`、`responseMode`、`primaryConceptId`、`conceptIds`、`highlightedNodeIds`、`evidencePassageIds`、`targetContentTypes`、`renderHint`
+- 字段语义：`stage/stepId/stepTitle/objective` 固定 step 身份与教学目标；`question/graphId/sessionMode/learnerLevel` 提供生成上下文；`responseMode` 区分被动阅读和交互式内容；`conceptIds/highlightedNodeIds/evidencePassageIds` 提供图谱与证据锚点；`targetContentTypes/renderHint` 指导 P3 的 artifact 生成与首选渲染类型
+- 当前默认：P2 统一输出 `targetContentTypes=["markdown"]` 且 `renderHint="markdown"`；需要 learner 输入的步骤会把 `responseMode` 标记为 `interactive`
+- 当前用途：为 P3 内容生成器提供可独立消费的 step 级内容请求，不再要求 P3 额外回读 sibling step 字段才能补齐核心上下文
 
 ## 11. 下一 session 启动提示词
 

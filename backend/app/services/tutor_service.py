@@ -10,8 +10,11 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.schemas.tutor import (
+    ContentArtifactType,
+    ContentRequestResponseMode,
     MessageType,
     TeachingPlan,
+    TeachingContentRequest,
     TeachingStep,
     TeachingStepType,
     TutorAnalyzeConcept,
@@ -323,7 +326,17 @@ class TutorService:
                     "markdown": f"我们先围绕“{question}”确认主概念 {primary_label}，并结合教材原文片段建立讲解边界。",
                     "graphHighlights": highlights,
                     "evidencePassages": evidence,
-                    "contentRequest": self._build_content_request("intro", analysis, learner_level),
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.INTRO,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-1",
+                        step_title=f"建立问题背景: {primary_label}",
+                        objective="明确问题、目标概念和教材证据来源。",
+                        requires_response=False,
+                    ),
                 },
                 relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
                 requiresResponse=False,
@@ -338,7 +351,17 @@ class TutorService:
                     "guidingQuestion": f"请你用自己的话解释 {primary_label} 在控制系统中的作用。",
                     "graphHighlights": highlights,
                     "evidencePassages": evidence,
-                    "contentRequest": self._build_content_request("concept", analysis, learner_level),
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.CONCEPT,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-2",
+                        step_title=f"拆解核心概念: {primary_label}",
+                        objective="将概念拆成更适合理解检查的子点。",
+                        requires_response=True,
+                    ),
                 },
                 relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
                 requiresResponse=True,
@@ -353,7 +376,17 @@ class TutorService:
                     "prompt": self._build_practice_prompt(mode, primary_label),
                     "graphHighlights": highlights,
                     "evidencePassages": [passage.model_dump(mode="json") for passage in analysis.evidencePassages[1:3]],
-                    "contentRequest": self._build_content_request("practice", analysis, learner_level),
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.PRACTICE if mode != TutorMode.QUIZ else TeachingStepType.CHECKPOINT,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-3",
+                        step_title="理解检查与迁移",
+                        objective="把概念迁移到更具体的问题场景。",
+                        requires_response=True,
+                    ),
                 },
                 relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
                 requiresResponse=True,
@@ -372,7 +405,17 @@ class TutorService:
                     ],
                     "graphHighlights": highlights,
                     "evidencePassages": evidence,
-                    "contentRequest": self._build_content_request("summary", analysis, learner_level),
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.SUMMARY,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-4",
+                        step_title="总结与下一步",
+                        objective="收束本轮学习，并给出下一步建议。",
+                        requires_response=False,
+                    ),
                 },
                 relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
                 requiresResponse=False,
@@ -388,16 +431,40 @@ class TutorService:
             steps=steps,
         )
 
-    def _build_content_request(self, stage: str, analysis: TutorAnalyzeResponse, learner_level: str) -> dict[str, Any]:
-        return {
-            "stage": stage,
-            "primaryConceptId": analysis.relevantConcepts[0].node.id if analysis.relevantConcepts else None,
-            "conceptIds": [concept.node.id for concept in analysis.relevantConcepts],
-            "highlightedNodeIds": analysis.highlightedNodeIds,
-            "evidencePassageIds": [passage.chunkId for passage in analysis.evidencePassages[:3]],
-            "renderHint": "markdown",
-            "learnerLevel": learner_level,
-        }
+    def _build_content_request(
+        self,
+        stage: TeachingStepType,
+        analysis: TutorAnalyzeResponse,
+        learner_level: str,
+        *,
+        question: str,
+        mode: TutorMode,
+        step_id: str,
+        step_title: str,
+        objective: str,
+        requires_response: bool,
+    ) -> TeachingContentRequest:
+        return TeachingContentRequest(
+            stage=stage,
+            stepId=step_id,
+            stepTitle=step_title,
+            objective=objective,
+            question=question,
+            graphId=analysis.graphId,
+            sessionMode=mode,
+            learnerLevel=learner_level,
+            responseMode=(
+                ContentRequestResponseMode.INTERACTIVE
+                if requires_response
+                else ContentRequestResponseMode.PASSIVE
+            ),
+            primaryConceptId=analysis.relevantConcepts[0].node.id if analysis.relevantConcepts else None,
+            conceptIds=[concept.node.id for concept in analysis.relevantConcepts],
+            highlightedNodeIds=analysis.highlightedNodeIds,
+            evidencePassageIds=[passage.chunkId for passage in analysis.evidencePassages[:3]],
+            targetContentTypes=[ContentArtifactType.MARKDOWN],
+            renderHint=ContentArtifactType.MARKDOWN,
+        )
 
     def _rank_passages(
         self,
@@ -449,9 +516,9 @@ class TutorService:
 
     def _render_step_message(self, step: TeachingStep, session: dict[str, Any]) -> str:
         question = session["question"]
-        base = f"[{step.title}] {step.content.get('markdown', '')}"
+        base = f"[{step.title}] {step.content.markdown or ''}"
         if step.requiresResponse:
-            prompt = step.content.get("guidingQuestion") or step.content.get("prompt")
+            prompt = step.content.guidingQuestion or step.content.prompt
             return f"{base}\n\n请基于你的问题“{question}”回答：{prompt}"
         return base
 

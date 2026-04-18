@@ -4,8 +4,12 @@ Unit tests for Tutor schema
 import pytest
 from pydantic import ValidationError
 from app.schemas.tutor import (
+    ContentArtifactType,
+    ContentRequestResponseMode,
     TeachingPlan,
+    TeachingContentRequest,
     TeachingStep,
+    TeachingStepContent,
     TeachingStepType,
     TutorMessage,
     TutorAnalyzeConcept,
@@ -165,7 +169,26 @@ class TestTutorSessionSchemas:
             type=TeachingStepType.INTRO,
             title="建立问题背景",
             objective="明确学习目标",
-            content={"markdown": "先建立背景"}
+            content={
+                "markdown": "先建立背景",
+                "contentRequest": {
+                    "stage": "intro",
+                    "stepId": "step-1",
+                    "stepTitle": "建立问题背景",
+                    "objective": "明确学习目标",
+                    "question": "Explain PID controllers",
+                    "graphId": "graph-task-123",
+                    "sessionMode": "interactive",
+                    "learnerLevel": "beginner",
+                    "responseMode": "passive",
+                    "primaryConceptId": "concept-pid",
+                    "conceptIds": ["concept-pid"],
+                    "highlightedNodeIds": ["concept-pid"],
+                    "evidencePassageIds": ["chunk-pid-1"],
+                    "targetContentTypes": ["markdown"],
+                    "renderHint": "markdown",
+                },
+            }
         )
         plan = TeachingPlan(
             summary="四步教学计划",
@@ -189,6 +212,8 @@ class TestTutorSessionSchemas:
         assert response.currentStep.id == "step-1"
         assert response.status == TutorSessionStatus.IN_PROGRESS
         assert response.metadata["pdfId"] == "graph-task-123"
+        assert response.currentStep.content.contentRequest.stepId == "step-1"
+        assert response.currentStep.content.contentRequest.responseMode == ContentRequestResponseMode.PASSIVE
 
 
 class TestTutorAnalyzeSchemas:
@@ -259,6 +284,70 @@ class TestTutorAnalyzeSchemas:
         assert response.relevantConcepts[0].node.id == "concept-pid"
         assert response.evidencePassages[0].pageStart == 12
         assert response.highlightedNodeIds == ["concept-pid"]
+
+
+class TestTeachingContentSchemas:
+    """Test stable content request contract handed to P3."""
+
+    def test_teaching_content_request_serializes_stable_contract(self):
+        request = TeachingContentRequest(
+            stage=TeachingStepType.PRACTICE,
+            stepId="step-3",
+            stepTitle="理解检查与迁移",
+            objective="把概念迁移到更具体的问题场景。",
+            question="How does PID reduce steady-state error?",
+            graphId="graph-task-123",
+            sessionMode=TutorMode.QUIZ,
+            learnerLevel="intermediate",
+            responseMode=ContentRequestResponseMode.INTERACTIVE,
+            primaryConceptId="concept-pid",
+            conceptIds=["concept-pid", "concept-feedback"],
+            highlightedNodeIds=["concept-pid"],
+            evidencePassageIds=["chunk-pid-1", "chunk-feedback-1"],
+            targetContentTypes=[ContentArtifactType.MARKDOWN, ContentArtifactType.INTERACTIVE],
+            renderHint=ContentArtifactType.MARKDOWN,
+        )
+
+        assert request.stage == TeachingStepType.PRACTICE
+        assert request.sessionMode == TutorMode.QUIZ
+        assert request.responseMode == ContentRequestResponseMode.INTERACTIVE
+        assert request.targetContentTypes == [ContentArtifactType.MARKDOWN, ContentArtifactType.INTERACTIVE]
+
+    def test_teaching_step_content_accepts_evidence_and_contract(self):
+        content = TeachingStepContent(
+            markdown="先建立背景",
+            graphHighlights=["concept-pid"],
+            evidencePassages=[
+                {
+                    "chunkId": "chunk-pid-1",
+                    "conceptId": "concept-pid",
+                    "conceptLabel": "PID Controller",
+                    "sourceFile": "chapter-3.pdf",
+                    "excerpt": "Integral action removes steady-state error.",
+                    "score": 0.98,
+                }
+            ],
+            contentRequest={
+                "stage": "intro",
+                "stepId": "step-1",
+                "stepTitle": "建立问题背景",
+                "objective": "明确学习目标",
+                "question": "Explain PID controllers",
+                "graphId": "graph-task-123",
+                "sessionMode": "interactive",
+                "learnerLevel": "beginner",
+                "responseMode": "passive",
+                "primaryConceptId": "concept-pid",
+                "conceptIds": ["concept-pid"],
+                "highlightedNodeIds": ["concept-pid"],
+                "evidencePassageIds": ["chunk-pid-1"],
+                "targetContentTypes": ["markdown"],
+                "renderHint": "markdown",
+            },
+        )
+
+        assert content.evidencePassages[0].chunkId == "chunk-pid-1"
+        assert content.contentRequest.graphId == "graph-task-123"
 
 
 class TestTutorSessionListingSchemas:

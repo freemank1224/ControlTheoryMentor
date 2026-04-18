@@ -1,10 +1,15 @@
 """Integration tests for Tutor API endpoints."""
 
+import os
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
+from redis import Redis
+from redis.exceptions import RedisError
 
 from app.schemas.tutor import TutorMode
-from app.services.session_service import InMemorySessionStore, SessionService
+from app.services.session_service import FailoverSessionService, InMemorySessionStore, RedisSessionStore, SessionService
 from app.services.tutor_service import TutorService, get_tutor_service
 
 
@@ -127,6 +132,39 @@ class FakeNodeService:
         return payloads[node_id]
 
 
+class FlakyPrimaryStore:
+    """Primary session store stub used to simulate transient Redis outages in API tests."""
+
+    def __init__(self) -> None:
+        self.store = InMemorySessionStore(data={})
+        self.available = True
+
+    def save(self, session_id: str, payload: dict):
+        self._ensure_available()
+        self.store.save(session_id, payload)
+
+    def get(self, session_id: str):
+        self._ensure_available()
+        return self.store.get(session_id)
+
+    def list(self, limit: int = 50):
+        self._ensure_available()
+        return self.store.list(limit=limit)
+
+    def ping(self) -> None:
+        self._ensure_available()
+
+    def go_down(self) -> None:
+        self.available = False
+
+    def recover(self) -> None:
+        self.available = True
+
+    def _ensure_available(self) -> None:
+        if not self.available:
+            raise RedisError("redis temporarily unavailable")
+
+
 @pytest.fixture
 def client():
     """Create test client with a deterministic TutorService override."""
@@ -139,6 +177,44 @@ def client():
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def app():
+    from app.main import app as fastapi_app
+
+    return fastapi_app
+
+
+def build_tutor_service(session_service: SessionService) -> TutorService:
+    return TutorService(node_service=FakeNodeService(), session_service=session_service)
+
+
+def cleanup_redis_namespace(client: Redis, prefix: str, index_key: str) -> None:
+    keys = list(client.scan_iter(match=f"{prefix}:*"))
+    if keys:
+        client.delete(*keys)
+    client.delete(index_key)
+
+
+@pytest.fixture
+def redis_session_service():
+    redis_url = os.getenv("TEST_REDIS_URL") or os.getenv("REDIS_URL") or "redis://localhost:6379/0"
+    client = Redis.from_url(redis_url, decode_responses=True)
+    try:
+        client.ping()
+    except RedisError as exc:
+        pytest.skip(f"Real Redis is not available for tutor recovery integration tests: {exc}")
+
+    namespace = uuid.uuid4().hex
+    prefix = f"test:tutor:session:{namespace}"
+    index_key = f"test:tutor:sessions:{namespace}"
+    cleanup_redis_namespace(client, prefix, index_key)
+    try:
+        yield SessionService(RedisSessionStore(client, prefix=prefix, index_key=index_key), backend_name="redis-test")
+    finally:
+        cleanup_redis_namespace(client, prefix, index_key)
+        client.close()
 
 
 @pytest.fixture(autouse=True)
@@ -195,6 +271,12 @@ class TestTutorSessionAPI:
         assert len(data["plan"]["steps"]) == 4
         assert data["metadata"]["analysis"]["highlightedNodeIds"][0] == "concept-pid"
         assert data["metadata"]["store"] == "memory-test"
+        intro_request = data["plan"]["steps"][0]["content"]["contentRequest"]
+        assert intro_request["stepId"] == "step-1"
+        assert intro_request["graphId"] == "graph-task-123"
+        assert intro_request["sessionMode"] == "interactive"
+        assert intro_request["responseMode"] == "passive"
+        assert intro_request["targetContentTypes"] == ["markdown"]
 
     def test_list_sessions_back_jump_and_respond_flow(self, client: TestClient):
         start_response = client.post(
@@ -293,6 +375,108 @@ class TestTutorSessionAPI:
         )
 
         assert response.status_code == 409
+
+    def test_session_recovery_with_real_redis(self, app, redis_session_service: SessionService):
+        first_service = build_tutor_service(redis_session_service)
+        app.dependency_overrides[get_tutor_service] = lambda: first_service
+        try:
+            with TestClient(app) as first_client:
+                start_response = first_client.post(
+                    "/api/tutor/session/start",
+                    json={
+                        "question": "How does PID reduce steady-state error?",
+                        "pdfId": "graph-task-123",
+                        "mode": "interactive",
+                        "context": {"learning_level": "beginner"},
+                    },
+                )
+                assert start_response.status_code == 200
+                session_id = start_response.json()["sessionId"]
+
+                first_client.post(f"/api/tutor/session/{session_id}/next")
+                step_two = first_client.post(f"/api/tutor/session/{session_id}/next")
+                assert step_two.status_code == 200
+                assert step_two.json()["currentStep"]["id"] == "step-2"
+                assert step_two.json()["needsUserResponse"] is True
+
+            recovered_service = build_tutor_service(redis_session_service)
+            app.dependency_overrides[get_tutor_service] = lambda: recovered_service
+
+            with TestClient(app) as recovered_client:
+                recovered = recovered_client.get(f"/api/tutor/session/{session_id}")
+                assert recovered.status_code == 200
+                recovered_data = recovered.json()
+                assert recovered_data["currentStep"]["id"] == "step-2"
+                assert recovered_data["status"] == "awaiting_response"
+                assert recovered_data["needsUserResponse"] is True
+                assert recovered_data["metadata"]["store"] == "redis-test"
+
+                listed = recovered_client.get("/api/tutor/sessions")
+                assert listed.status_code == 200
+                listed_data = listed.json()
+                assert listed_data["total"] == 1
+                assert listed_data["items"][0]["sessionId"] == session_id
+
+                responded = recovered_client.post(
+                    f"/api/tutor/session/{session_id}/respond",
+                    json={"response": "Integral action accumulates error and removes offset."},
+                )
+                assert responded.status_code == 200
+                assert responded.json()["status"] == "ready"
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_session_falls_back_and_fails_back_after_transient_redis_outage(self, app):
+        primary = FlakyPrimaryStore()
+        failover_service = FailoverSessionService(
+            primary_store=primary,
+            fallback_store=InMemorySessionStore(data={}),
+            healthcheck=primary.ping,
+            primary_backend_name="redis-failover-test",
+        )
+        app.dependency_overrides[get_tutor_service] = lambda: build_tutor_service(failover_service)
+        try:
+            with TestClient(app) as client:
+                started = client.post(
+                    "/api/tutor/session/start",
+                    json={
+                        "question": "How does PID reduce steady-state error?",
+                        "pdfId": "graph-task-123",
+                        "mode": "interactive",
+                        "context": {"learning_level": "beginner"},
+                    },
+                )
+                assert started.status_code == 200
+                session_id = started.json()["sessionId"]
+                assert started.json()["metadata"]["store"] == "redis-failover-test"
+
+                primary.go_down()
+
+                step_one = client.post(f"/api/tutor/session/{session_id}/next")
+                assert step_one.status_code == 200
+                step_one_data = step_one.json()
+                assert step_one_data["currentStep"]["id"] == "step-1"
+                assert step_one_data["metadata"]["store"] == "memory-fallback"
+
+                listed_during_outage = client.get("/api/tutor/sessions")
+                assert listed_during_outage.status_code == 200
+                assert listed_during_outage.json()["metadata"]["store"] == "memory-fallback"
+                assert listed_during_outage.json()["items"][0]["sessionId"] == session_id
+
+                primary.recover()
+
+                recovered = client.get(f"/api/tutor/session/{session_id}")
+                assert recovered.status_code == 200
+                recovered_data = recovered.json()
+                assert recovered_data["currentStep"]["id"] == "step-1"
+                assert recovered_data["metadata"]["store"] == "redis-failover-test"
+
+                step_two = client.post(f"/api/tutor/session/{session_id}/next")
+                assert step_two.status_code == 200
+                assert step_two.json()["currentStep"]["id"] == "step-2"
+                assert step_two.json()["metadata"]["store"] == "redis-failover-test"
+        finally:
+            app.dependency_overrides.clear()
 
 
 class TestQuizAPI:

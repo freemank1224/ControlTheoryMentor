@@ -32,6 +32,15 @@ P3 启动前，必须确认 P2 已交付：
 3. 可供 UI 使用的 graph highlight metadata
 4. 可恢复的 tutor session
 
+### 当前已确认的 content request 输入格式
+
+- 位置：`TeachingStep.content.contentRequest`
+- 核心身份字段：`stage`、`stepId`、`stepTitle`、`objective`
+- 生成上下文字段：`question`、`graphId`、`sessionMode`、`learnerLevel`
+- 图谱锚点字段：`primaryConceptId`、`conceptIds`、`highlightedNodeIds`、`evidencePassageIds`
+- 渲染协商字段：`responseMode`、`targetContentTypes`、`renderHint`
+- 当前默认：P2 输出 `targetContentTypes=["markdown"]`，并用 `responseMode` 标记该 step 是否需要 P3 生成交互式内容
+
 ## 4. 本阶段范围
 
 ### 范围内

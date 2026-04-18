@@ -1,7 +1,7 @@
 """Tutor schemas for AI tutoring interactions."""
 from typing import List, Dict, Any, Optional
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.node import NodeSummary
 
@@ -36,6 +36,20 @@ class TeachingStepType(str, Enum):
     CHECKPOINT = "checkpoint"
     PRACTICE = "practice"
     SUMMARY = "summary"
+
+
+class ContentArtifactType(str, Enum):
+    """Content artifact kinds that P3 may generate for a teaching step."""
+    MARKDOWN = "markdown"
+    MERMAID = "mermaid"
+    LATEX = "latex"
+    INTERACTIVE = "interactive"
+
+
+class ContentRequestResponseMode(str, Enum):
+    """Whether a generated step artifact is passive or expects learner interaction."""
+    PASSIVE = "passive"
+    INTERACTIVE = "interactive"
 
 
 class TutorMessage(BaseModel):
@@ -149,13 +163,58 @@ class TutorAnalyzeResponse(BaseModel):
     suggestedSession: Dict[str, Any] = Field(default_factory=dict, description="Suggested session bootstrap metadata")
 
 
+class TeachingContentRequest(BaseModel):
+    """Stable step-level content generation contract handed to P3."""
+    stage: TeachingStepType = Field(..., description="Teaching stage that the content generator should serve")
+    stepId: str = Field(..., min_length=1, description="Stable teaching step identifier")
+    stepTitle: str = Field(..., min_length=1, description="Human-readable step title")
+    objective: str = Field(..., min_length=1, description="Instructional objective for the content artifact")
+    question: str = Field(..., min_length=1, description="Original learner question for the whole session")
+    graphId: str = Field(..., min_length=1, description="Source graph identifier that grounds this request")
+    sessionMode: TutorMode = Field(..., description="Tutor mode that shaped the teaching plan")
+    learnerLevel: str = Field(..., min_length=1, description="Learner level hint carried from session context")
+    responseMode: ContentRequestResponseMode = Field(..., description="Whether the generated artifact is passive or interactive")
+    primaryConceptId: Optional[str] = Field(default=None, description="Primary concept selected during tutor analyze")
+    conceptIds: List[str] = Field(default_factory=list, description="Concept ids available to content generation")
+    highlightedNodeIds: List[str] = Field(default_factory=list, description="Graph node ids the UI should highlight for this step")
+    evidencePassageIds: List[str] = Field(default_factory=list, description="Source passage chunk ids relevant to this step")
+    targetContentTypes: List[ContentArtifactType] = Field(
+        default_factory=lambda: [ContentArtifactType.MARKDOWN],
+        description="Requested artifact kinds for downstream content generation",
+    )
+    renderHint: ContentArtifactType = Field(
+        default=ContentArtifactType.MARKDOWN,
+        description="Primary content type that current consumers should prefer rendering first",
+    )
+
+
+class TeachingStepContent(BaseModel):
+    """Structured step payload combining current placeholders and future content inputs."""
+
+    model_config = ConfigDict(extra="allow")
+
+    markdown: Optional[str] = Field(default=None, description="Current markdown placeholder shown before P3 artifacts exist")
+    guidingQuestion: Optional[str] = Field(default=None, description="Optional learner-facing guiding question")
+    prompt: Optional[str] = Field(default=None, description="Optional prompt for practice or quiz style steps")
+    nextActions: List[str] = Field(default_factory=list, description="Optional follow-up actions for summary style steps")
+    graphHighlights: List[str] = Field(default_factory=list, description="Graph node ids to emphasize in the UI")
+    evidencePassages: List[TutorEvidencePassage] = Field(
+        default_factory=list,
+        description="Evidence excerpts that anchor the current teaching step",
+    )
+    contentRequest: Optional[TeachingContentRequest] = Field(
+        default=None,
+        description="Stable request payload that P3 should consume to generate artifacts",
+    )
+
+
 class TeachingStep(BaseModel):
     """Single step inside a tutor session plan"""
     id: str = Field(..., description="Unique step identifier")
     type: TeachingStepType = Field(..., description="Step type")
     title: str = Field(..., min_length=1, description="Step title")
     objective: str = Field(..., min_length=1, description="Instructional objective")
-    content: Dict[str, Any] = Field(default_factory=dict, description="Structured rendering payload")
+    content: TeachingStepContent = Field(default_factory=TeachingStepContent, description="Structured rendering payload")
     relatedTopics: List[str] = Field(default_factory=list, description="Knowledge graph topics referenced by the step")
     requiresResponse: bool = Field(default=False, description="Whether the learner must respond before advancing")
 
@@ -168,7 +227,24 @@ class TeachingStep(BaseModel):
                 "objective": "明确学习目标与关键概念",
                 "content": {
                     "markdown": "我们先把 PID 控制器放回闭环控制场景里。",
-                    "highlights": ["目标值", "误差", "反馈"]
+                    "graphHighlights": ["目标值", "误差", "反馈"],
+                    "contentRequest": {
+                        "stage": "intro",
+                        "stepId": "step-1",
+                        "stepTitle": "建立问题背景",
+                        "objective": "明确学习目标与关键概念",
+                        "question": "Explain PID controllers",
+                        "graphId": "graph-task-123",
+                        "sessionMode": "interactive",
+                        "learnerLevel": "beginner",
+                        "responseMode": "passive",
+                        "primaryConceptId": "concept-pid",
+                        "conceptIds": ["concept-pid"],
+                        "highlightedNodeIds": ["concept-pid"],
+                        "evidencePassageIds": ["chunk-pid-1"],
+                        "targetContentTypes": ["markdown"],
+                        "renderHint": "markdown"
+                    }
                 },
                 "relatedTopics": ["pid", "feedback"],
                 "requiresResponse": False
