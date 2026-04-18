@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { MainLayout } from './components/layout/MainLayout';
 import { UploadCard } from './components/upload/UploadCard';
 import { KnowledgeGraph } from './components/graph/KnowledgeGraph';
+import { TutorWorkspace } from './components/tutor/TutorWorkspace';
 import { useKnowledgeGraph } from './hooks/useKnowledgeGraph';
 
 function HomePage() {
@@ -16,6 +17,7 @@ function HomePage() {
 
   return (
     <div style={{ padding: '2rem' }}>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>系统初始化中...</p>
       <div style={{ marginBottom: '2rem' }}>
         <UploadCard onUploadComplete={handleUploadComplete} />
       </div>
@@ -43,14 +45,7 @@ function UploadPage() {
 }
 
 function TutorPage() {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <h2 style={{ fontFamily: 'Georgia, serif', marginBottom: '1rem' }}>
-        AI 导师
-      </h2>
-      <p>AI 导师功能开发中...</p>
-    </div>
-  );
+  return <TutorWorkspace />;
 }
 
 export default function App() {

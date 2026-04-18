@@ -1,0 +1,99 @@
+.content-renderer {
+  border: 1px solid var(--border-cream);
+  border-radius: var(--card-radius);
+  background: var(--bg-ivory);
+  box-shadow: 0 6px 22px rgba(20, 20, 19, 0.08);
+  overflow: hidden;
+}
+
+.content-renderer__tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-cream);
+  background: linear-gradient(135deg, rgba(201, 100, 66, 0.08), rgba(232, 230, 220, 0.7));
+}
+
+.content-renderer__tab {
+  border: 1px solid var(--border-warm);
+  background: #fff;
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.content-renderer__tab:hover {
+  border-color: var(--accent-terracotta);
+  color: var(--text-primary);
+}
+
+.content-renderer__tab.is-active {
+  border-color: var(--accent-terracotta);
+  background: var(--accent-terracotta);
+  color: var(--bg-ivory);
+}
+
+.content-renderer__body {
+  padding: 1rem 1.1rem 1.25rem;
+  color: var(--text-primary);
+  min-height: 220px;
+}
+
+.content-renderer__status,
+.content-renderer__error,
+.content-renderer__empty {
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+  font-size: 0.92rem;
+}
+
+.content-renderer__status {
+  background: rgba(201, 100, 66, 0.08);
+  border: 1px solid rgba(201, 100, 66, 0.25);
+}
+
+.content-renderer__error {
+  background: #fdecec;
+  border: 1px solid #e6b8b8;
+  color: #8a2f2f;
+}
+
+.content-renderer__empty {
+  background: rgba(232, 230, 220, 0.45);
+  border: 1px dashed var(--border-warm);
+  color: var(--text-secondary);
+}
+
+.content-renderer__markdown :first-child {
+  margin-top: 0;
+}
+
+.content-renderer__markdown :last-child {
+  margin-bottom: 0;
+}
+
+.content-renderer__code {
+  background: #fff;
+  border: 1px solid var(--border-cream);
+  border-radius: 10px;
+  padding: 0.9rem;
+  overflow-x: auto;
+}
+
+.content-renderer__interactive {
+  background: #fff;
+  border: 1px solid var(--border-cream);
+  border-radius: 10px;
+  padding: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.content-renderer__meta {
+  margin-top: 0.9rem;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+}

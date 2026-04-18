@@ -277,6 +277,8 @@ class TestTutorSessionAPI:
         assert intro_request["sessionMode"] == "interactive"
         assert intro_request["responseMode"] == "passive"
         assert intro_request["targetContentTypes"] == ["markdown"]
+        assert data["plan"]["steps"][0]["content"]["contentArtifactId"].startswith("content-")
+        assert data["plan"]["steps"][0]["content"]["contentArtifactStatus"] == "ready"
 
     def test_list_sessions_back_jump_and_respond_flow(self, client: TestClient):
         start_response = client.post(

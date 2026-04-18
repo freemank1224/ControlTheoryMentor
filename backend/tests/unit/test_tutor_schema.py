@@ -317,6 +317,9 @@ class TestTeachingContentSchemas:
         content = TeachingStepContent(
             markdown="先建立背景",
             graphHighlights=["concept-pid"],
+            contentArtifactId="content-123",
+            contentArtifactStatus="ready",
+            contentArtifactUpdatedAt="2026-04-18T00:00:00Z",
             evidencePassages=[
                 {
                     "chunkId": "chunk-pid-1",
@@ -348,6 +351,7 @@ class TestTeachingContentSchemas:
 
         assert content.evidencePassages[0].chunkId == "chunk-pid-1"
         assert content.contentRequest.graphId == "graph-task-123"
+        assert content.contentArtifactId == "content-123"
 
 
 class TestTutorSessionListingSchemas:

@@ -1,7 +1,12 @@
 import type {
+  ContentGenerateRequest,
+  ContentGenerateResponse,
+  ContentInteractiveRequest,
+  ContentTypedPayloadResponse,
   PDFUploadResponse,
   PDFStatusResponse,
   GraphDataResponse,
+  TutorSessionJumpRequest,
   TutorSessionRespondRequest,
   TutorSessionResponse,
   TutorSessionStart
@@ -88,6 +93,49 @@ class APIClient {
       method: 'POST',
       body: JSON.stringify(request),
     });
+  }
+
+  async backTutorSessionStep(sessionId: string): Promise<TutorSessionResponse> {
+    return this.request<TutorSessionResponse>(`/api/tutor/session/${sessionId}/back`, {
+      method: 'POST',
+    });
+  }
+
+  async jumpTutorSessionStep(
+    sessionId: string,
+    request: TutorSessionJumpRequest,
+  ): Promise<TutorSessionResponse> {
+    return this.request<TutorSessionResponse>(`/api/tutor/session/${sessionId}/jump`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  // Content Artifacts
+  async generateContent(request: ContentGenerateRequest): Promise<ContentGenerateResponse> {
+    return this.request<ContentGenerateResponse>('/api/content/generate', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async generateInteractiveContent(request: ContentInteractiveRequest): Promise<ContentGenerateResponse> {
+    return this.request<ContentGenerateResponse>('/api/content/interactive', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getContentArtifact(contentId: string): Promise<ContentGenerateResponse> {
+    return this.request<ContentGenerateResponse>(`/api/content/${contentId}`);
+  }
+
+  async getContentMermaid(contentId: string): Promise<ContentTypedPayloadResponse> {
+    return this.request<ContentTypedPayloadResponse>(`/api/content/${contentId}/mermaid`);
+  }
+
+  async getContentLatex(contentId: string): Promise<ContentTypedPayloadResponse> {
+    return this.request<ContentTypedPayloadResponse>(`/api/content/${contentId}/latex`);
   }
 }
 

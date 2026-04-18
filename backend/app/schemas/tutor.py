@@ -206,6 +206,18 @@ class TeachingStepContent(BaseModel):
         default=None,
         description="Stable request payload that P3 should consume to generate artifacts",
     )
+    contentArtifactId: Optional[str] = Field(
+        default=None,
+        description="Generated content artifact id for the current teaching step",
+    )
+    contentArtifactStatus: Optional[str] = Field(
+        default=None,
+        description="Artifact status snapshot for the current step",
+    )
+    contentArtifactUpdatedAt: Optional[str] = Field(
+        default=None,
+        description="Artifact timestamp surfaced to frontend consumers",
+    )
 
 
 class TeachingStep(BaseModel):

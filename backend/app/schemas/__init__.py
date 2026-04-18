@@ -43,6 +43,14 @@ from app.schemas.tutor import (
     TutorSessionListItem,
     TutorSessionsResponse,
 )
+from app.schemas.content import (
+    ContentArtifact,
+    ContentArtifactStatus,
+    ContentGenerateRequest,
+    ContentGenerateResponse,
+    ContentInteractiveRequest,
+    ContentTypedPayloadResponse,
+)
 
 __all__ = [
     "PDFUploadResponse",
@@ -83,4 +91,10 @@ __all__ = [
     "TutorSessionJumpRequest",
     "TutorSessionListItem",
     "TutorSessionsResponse",
+    "ContentArtifact",
+    "ContentArtifactStatus",
+    "ContentGenerateRequest",
+    "ContentGenerateResponse",
+    "ContentInteractiveRequest",
+    "ContentTypedPayloadResponse",
 ]

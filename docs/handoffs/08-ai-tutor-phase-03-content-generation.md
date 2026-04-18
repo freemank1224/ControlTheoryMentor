@@ -1,7 +1,7 @@
 # Phase 03 Handoff: 内容生成与渲染
 
 **阶段代号**: P3
-**阶段状态**: ⏳ 待完成
+**阶段状态**: ✅ 核心闭环已完成（可交接 P4）
 **上游输入**: P2 输出的 session schema、content request shape、graph highlight metadata
 **下游消费者**: P4 学习闭环与硬化
 
@@ -115,15 +115,84 @@ P4 开始前必须能从本阶段拿到：
 
 ## 10. 阶段结束时必须更新的内容
 
-完成阶段时，请在本文件补充：
+### content artifact schema 摘要
 
-- `阶段状态`
-- `content artifact schema 摘要`
-- `已完成接口`
-- `前端渲染能力`
-- `测试结果`
-- `遗留问题`
-- `交给 P4 的学习跟踪依赖`
+- 新增后端 schema: `backend/app/schemas/content.py`
+- 核心对象: `ContentArtifact`
+	- 身份与状态: `id`, `status`, `cacheKey`
+	- 渲染协商: `renderHint`, `targetContentTypes`
+	- 载荷: `markdown`, `mermaid`, `latex`, `interactive`
+	- 上下文锚点: `source`（即 `TeachingContentRequest`）
+	- 可追踪元数据: `createdAt`, `updatedAt`, `metadata`
+- Tutor step 接线字段（`TeachingStep.content`）
+	- `contentArtifactId`
+	- `contentArtifactStatus`
+	- `contentArtifactUpdatedAt`
+
+### 已完成接口
+
+- `POST /api/content/generate`
+- `POST /api/content/interactive`
+- `GET /api/content/{id}`
+- `GET /api/content/{id}/mermaid`
+- `GET /api/content/{id}/latex`
+
+实现位置：
+
+- route: `backend/app/api/routes/content.py`
+- service: `backend/app/services/content_service.py`
+- app 注册: `backend/app/main.py`
+
+### 前端渲染能力
+
+- 新增 `frontend/src/components/content/ContentRenderer.tsx`
+	- Markdown: `react-markdown`
+	- Mermaid: `mermaid` 运行时渲染 SVG
+	- LaTeX: `react-katex` + `katex`
+	- interactive: 协议占位 payload 渲染
+- 新增 `frontend/src/hooks/useContentArtifact.ts`
+	- 按 `contentArtifactId` 拉取 artifact
+- 导师页从占位升级为真实流程
+	- `frontend/src/components/tutor/TutorWorkspace.tsx`
+	- `frontend/src/App.tsx` 路由接线
+	- 支持 session 启动、next/back/jump/respond
+	- 当前 step 按 `contentArtifactId` 拉取并渲染内容
+
+### 测试结果
+
+后端：
+
+- `cd backend; ../.venv/Scripts/python.exe -m pytest tests/unit/test_content_schema.py tests/unit/test_content_service.py tests/integration/test_content_api.py tests/integration/test_tutor_api.py tests/unit/test_tutor_schema.py -q`
+- 结果：`39 passed, 1 skipped, 21 warnings`
+
+前端：
+
+- `cd frontend; npm run build`
+- 结果：构建通过
+- `cd frontend; npm test -- --run src/components/content/ContentRenderer.test.tsx`
+- 结果：`1 passed, 2 tests`
+
+新增测试：
+
+- `backend/tests/unit/test_content_schema.py`
+- `backend/tests/unit/test_content_service.py`
+- `backend/tests/integration/test_content_api.py`
+- `frontend/src/components/content/ContentRenderer.test.tsx`
+
+### 遗留问题
+
+1. `ContentService` 当前仍是模板生成器（`template-v1`），未接入真实 LLM/worker 内容生成。
+2. `interactive` 仍是协议占位 payload，未实现动画/comic 真实生成。
+3. Mermaid 依赖在前端引入较大 bundle，后续可按需做动态加载和分包优化。
+4. 现有 warnings 仍为仓库既有 Pydantic v2 class-based config deprecation，未在本阶段处理。
+
+### 交给 P4 的学习跟踪依赖
+
+1. 稳定 content artifact 身份主键：`TeachingStep.content.contentArtifactId`
+2. session-step 到 artifact 的绑定路径：`TutorService._ensure_step_content_artifact`
+3. 可重取内容接口：`GET /api/content/{id}`
+4. 多模态内容读取接口：`/mermaid`、`/latex` typed payload
+5. Tutor 页面交互模型：session 驱动 + current step artifact 渲染 + learner response 回写
 
 ## 11. 下一 session 启动提示词
 

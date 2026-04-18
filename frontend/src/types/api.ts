@@ -58,8 +58,57 @@ export interface GraphDataResponse {
 export interface TutorSessionStart {
   question: string;
   pdfId: string;
-  mode?: string;
+  mode?: TutorMode;
   context?: Record<string, unknown>;
+}
+
+export type TutorMode = 'interactive' | 'tutorial' | 'quiz' | 'problem_solving';
+
+export type ContentArtifactType = 'markdown' | 'mermaid' | 'latex' | 'interactive';
+
+export type ContentRequestResponseMode = 'passive' | 'interactive';
+
+export interface TutorEvidencePassage {
+  chunkId: string;
+  conceptId: string;
+  conceptLabel: string;
+  sourceFile: string;
+  sourceLocation?: string | null;
+  pageStart?: number | null;
+  pageEnd?: number | null;
+  excerpt: string;
+  score: number;
+}
+
+export interface TeachingContentRequest {
+  stage: string;
+  stepId: string;
+  stepTitle: string;
+  objective: string;
+  question: string;
+  graphId: string;
+  sessionMode: TutorMode;
+  learnerLevel: string;
+  responseMode: ContentRequestResponseMode;
+  primaryConceptId?: string | null;
+  conceptIds: string[];
+  highlightedNodeIds: string[];
+  evidencePassageIds: string[];
+  targetContentTypes: ContentArtifactType[];
+  renderHint: ContentArtifactType;
+}
+
+export interface TeachingStepContent {
+  markdown?: string;
+  guidingQuestion?: string;
+  prompt?: string;
+  nextActions?: string[];
+  graphHighlights?: string[];
+  evidencePassages?: TutorEvidencePassage[];
+  contentRequest?: TeachingContentRequest;
+  contentArtifactId?: string | null;
+  contentArtifactStatus?: string | null;
+  contentArtifactUpdatedAt?: string | null;
 }
 
 export interface TeachingStep {
@@ -67,7 +116,7 @@ export interface TeachingStep {
   type: string;
   title: string;
   objective: string;
-  content: Record<string, unknown>;
+  content: TeachingStepContent;
   relatedTopics?: string[];
   requiresResponse?: boolean;
 }
@@ -89,6 +138,11 @@ export interface TutorSessionRespondRequest {
   metadata?: Record<string, unknown>;
 }
 
+export interface TutorSessionJumpRequest {
+  stepIndex?: number;
+  stepId?: string;
+}
+
 export interface TutorSessionResponse {
   sessionId: string;
   plan: TeachingPlan;
@@ -100,4 +154,45 @@ export interface TutorSessionResponse {
   needsUserResponse: boolean;
   feedback?: string | null;
   metadata?: Record<string, unknown>;
+}
+
+export type ContentArtifactStatus = 'ready' | 'pending' | 'failed';
+
+export interface ContentArtifact {
+  id: string;
+  status: ContentArtifactStatus;
+  renderHint: ContentArtifactType;
+  targetContentTypes: ContentArtifactType[];
+  markdown?: string | null;
+  mermaid?: string | null;
+  latex?: string | null;
+  interactive?: Record<string, unknown> | null;
+  source: TeachingContentRequest;
+  cacheKey: string;
+  createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ContentGenerateRequest {
+  contentRequest: TeachingContentRequest;
+  forceRegenerate?: boolean;
+}
+
+export interface ContentInteractiveRequest {
+  contentRequest: TeachingContentRequest;
+  interactionMode?: string;
+}
+
+export interface ContentGenerateResponse {
+  artifact: ContentArtifact;
+  cacheHit: boolean;
+}
+
+export interface ContentTypedPayloadResponse {
+  id: string;
+  type: ContentArtifactType;
+  status: ContentArtifactStatus;
+  content: string;
+  metadata: Record<string, unknown>;
 }

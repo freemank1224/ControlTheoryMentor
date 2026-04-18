@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from app.services.content_service import ContentService, get_content_service
 from app.schemas.tutor import (
     ContentArtifactType,
     ContentRequestResponseMode,
@@ -57,9 +58,15 @@ STOPWORDS = {
 class TutorService:
     """Graph-grounded tutor orchestration and session persistence."""
 
-    def __init__(self, node_service: NodeService | None = None, session_service: SessionService | None = None) -> None:
+    def __init__(
+        self,
+        node_service: NodeService | None = None,
+        session_service: SessionService | None = None,
+        content_service: ContentService | None = None,
+    ) -> None:
         self.node_service = node_service or get_node_service()
         self.session_service = session_service or get_session_service()
+        self.content_service = content_service or get_content_service()
 
     def analyze_question(self, request: TutorAnalyzeRequest) -> TutorAnalyzeResponse:
         search = self.node_service.semantic_search(request.pdfId, request.question, limit=request.limit)
@@ -113,6 +120,7 @@ class TutorService:
         session_id = f"session-{uuid.uuid4()}"
         now = self._utc_now_iso()
         plan = self._build_teaching_plan(request.question, request.mode, analysis, request.context or {})
+        self._hydrate_plan_content_artifacts(plan)
 
         session = {
             "id": session_id,
@@ -192,6 +200,7 @@ class TutorService:
             return self._build_session_response(session, feedback=completion_message)
 
         self._activate_step(session, plan.steps[next_index], next_index, event="step_started")
+        session["plan"] = plan.model_dump(mode="json")
         self.session_service.save_session(session)
         return self._build_session_response(session)
 
@@ -233,6 +242,7 @@ class TutorService:
 
         previous_index = current_index - 1
         self._activate_step(session, plan.steps[previous_index], previous_index, event="step_revisited")
+        session["plan"] = plan.model_dump(mode="json")
         self.session_service.save_session(session)
         return self._build_session_response(session, feedback="Moved back to the previous step.")
 
@@ -241,6 +251,7 @@ class TutorService:
         plan = TeachingPlan.model_validate(session["plan"])
         target_index = self._resolve_jump_target(plan, request)
         self._activate_step(session, plan.steps[target_index], target_index, event="step_jumped")
+        session["plan"] = plan.model_dump(mode="json")
         self.session_service.save_session(session)
         return self._build_session_response(session, feedback=f"Jumped to {plan.steps[target_index].title}.")
 
@@ -257,6 +268,7 @@ class TutorService:
         raise HTTPException(status_code=400, detail="Either stepIndex or stepId is required.")
 
     def _activate_step(self, session: dict[str, Any], step: TeachingStep, index: int, *, event: str) -> None:
+        self._ensure_step_content_artifact(step)
         session["currentStepIndex"] = index
         session["awaitingResponse"] = step.requiresResponse
         session["status"] = (
@@ -540,6 +552,23 @@ class TutorService:
         session.setdefault("messages", []).append(
             TutorMessage(role=role, content=content, metadata=metadata).model_dump(mode="json")
         )
+
+    def _hydrate_plan_content_artifacts(self, plan: TeachingPlan) -> None:
+        for step in plan.steps:
+            self._ensure_step_content_artifact(step)
+
+    def _ensure_step_content_artifact(self, step: TeachingStep) -> None:
+        if step.content.contentArtifactId:
+            return
+        if step.content.contentRequest is None:
+            return
+        try:
+            artifact, _ = self.content_service.generate_content(step.content.contentRequest)
+            step.content.contentArtifactId = artifact.id
+            step.content.contentArtifactStatus = artifact.status.value
+            step.content.contentArtifactUpdatedAt = artifact.updatedAt
+        except Exception:
+            step.content.contentArtifactStatus = "failed"
 
     def _touch_session(self, session: dict[str, Any]) -> None:
         session["updatedAt"] = self._utc_now_iso()
