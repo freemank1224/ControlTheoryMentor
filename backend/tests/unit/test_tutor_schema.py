@@ -4,6 +4,9 @@ Unit tests for Tutor schema
 import pytest
 from pydantic import ValidationError
 from app.schemas.tutor import (
+    CourseType,
+    CourseTypeDecision,
+    CourseTypeStrategy,
     ContentArtifactType,
     ContentRequestResponseMode,
     TeachingPlan,
@@ -156,6 +159,8 @@ class TestTutorSessionSchemas:
         assert request.question == "Explain PID controllers"
         assert request.pdfId == "graph-task-123"
         assert request.mode == TutorMode.INTERACTIVE
+        assert request.courseTypeStrategy == CourseTypeStrategy.AUTO
+        assert request.courseTypeOverride is None
 
     def test_tutor_session_respond_request_requires_response(self):
         """Respond request should reject empty responses"""
@@ -228,6 +233,45 @@ class TestTutorAnalyzeSchemas:
         assert request.mode == TutorMode.INTERACTIVE
         assert request.limit == 3
         assert request.context is None
+        assert request.courseTypeStrategy == CourseTypeStrategy.AUTO
+        assert request.courseTypeOverride is None
+
+    def test_tutor_analyze_request_legacy_course_type_maps_to_override(self):
+        request = TutorAnalyzeRequest(
+            question="How does PID reduce steady-state error?",
+            pdfId="graph-task-123",
+            courseType="problem_solving",
+        )
+
+        assert request.courseTypeOverride == CourseType.PROBLEM_SOLVING
+
+    def test_tutor_session_start_request_manual_override_and_legacy_field(self):
+        manual_request = TutorSessionStartRequest(
+            question="Solve PID gains",
+            pdfId="graph-task-123",
+            courseTypeStrategy="manual",
+            courseTypeOverride="problem_solving",
+        )
+        legacy_request = TutorSessionStartRequest(
+            question="Explain PID",
+            pdfId="graph-task-123",
+            courseType="knowledge_learning",
+        )
+
+        assert manual_request.courseTypeStrategy == CourseTypeStrategy.MANUAL
+        assert manual_request.courseTypeOverride == CourseType.PROBLEM_SOLVING
+        assert legacy_request.courseTypeOverride == CourseType.KNOWLEDGE_LEARNING
+
+    def test_course_type_decision_schema_serializes(self):
+        decision = CourseTypeDecision(
+            decision=CourseType.KNOWLEDGE_LEARNING,
+            confidence=0.76,
+            signals=["keyword_knowledge:2"],
+            overridden=False,
+        )
+
+        assert decision.decision == CourseType.KNOWLEDGE_LEARNING
+        assert decision.signals == ["keyword_knowledge:2"]
 
     def test_tutor_evidence_passage_requires_excerpt(self):
         with pytest.raises(ValidationError):

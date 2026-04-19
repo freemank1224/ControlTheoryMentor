@@ -257,10 +257,101 @@ class TestTutorAnalyzeAPI:
         assert data["evidencePassages"][0]["chunkId"] == "chunk-pid-1"
         assert "steady-state error" in data["evidencePassages"][0]["excerpt"].lower()
         assert data["suggestedSession"]["sessionStore"] == "memory-test"
+        assert data["metadata"]["finalCourseType"] == "knowledge_learning"
+        assert data["metadata"]["autoDecision"]["decision"] == "knowledge_learning"
+
+    def test_tutor_analyze_supports_manual_course_type(self, client: TestClient):
+        response = client.post(
+            "/api/tutor/analyze",
+            json={
+                "question": "How does PID reduce steady-state error?",
+                "pdfId": "graph-task-123",
+                "courseTypeStrategy": "manual",
+                "courseTypeOverride": "problem_solving",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["finalCourseType"] == "problem_solving"
+        assert data["metadata"]["courseTypeDecision"]["overridden"] is True
+
+    def test_tutor_analyze_supports_override_course_type(self, client: TestClient):
+        response = client.post(
+            "/api/tutor/analyze",
+            json={
+                "question": "Given G(s)=1/(s+1), calculate Kp.",
+                "pdfId": "graph-task-123",
+                "courseTypeStrategy": "override",
+                "courseTypeOverride": "knowledge_learning",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["autoDecision"]["decision"] == "problem_solving"
+        assert data["metadata"]["finalCourseType"] == "knowledge_learning"
+
+    def test_tutor_analyze_legacy_course_type_field_is_compatible(self, client: TestClient):
+        response = client.post(
+            "/api/tutor/analyze",
+            json={
+                "question": "How does PID reduce steady-state error?",
+                "pdfId": "graph-task-123",
+                "courseType": "problem_solving",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["finalCourseType"] == "problem_solving"
+        assert data["metadata"]["courseTypeStrategy"] == "auto"
 
 
 class TestTutorSessionAPI:
     """Test service-backed tutor session endpoints."""
+
+    @pytest.mark.parametrize(
+        "extra_payload,expected_course_type",
+        [
+            ({}, "knowledge_learning"),
+            (
+                {
+                    "courseTypeStrategy": "manual",
+                    "courseTypeOverride": "problem_solving",
+                },
+                "problem_solving",
+            ),
+            (
+                {
+                    "courseTypeStrategy": "override",
+                    "courseTypeOverride": "knowledge_learning",
+                    "question": "Given G(s)=1/(s+1), calculate Kp.",
+                },
+                "knowledge_learning",
+            ),
+        ],
+    )
+    def test_session_start_supports_auto_manual_override_paths(
+        self,
+        client: TestClient,
+        extra_payload: dict,
+        expected_course_type: str,
+    ):
+        payload = {
+            "question": "How does PID reduce steady-state error?",
+            "pdfId": "graph-task-123",
+            "mode": "interactive",
+        }
+        payload.update(extra_payload)
+
+        response = client.post("/api/tutor/session/start", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["finalCourseType"] == expected_course_type
+        assert "autoDecision" in data["metadata"]
+        assert "courseTypeDecision" in data["metadata"]
 
     def test_session_start_includes_learning_personalization_snapshot(self, app):
         learning_service = LearningService(
@@ -331,6 +422,22 @@ class TestTutorSessionAPI:
         assert intro_request["targetContentTypes"] == ["markdown"]
         assert data["plan"]["steps"][0]["content"]["contentArtifactId"].startswith("content-")
         assert data["plan"]["steps"][0]["content"]["contentArtifactStatus"] == "ready"
+        assert data["metadata"]["finalCourseType"] == "knowledge_learning"
+
+    def test_start_session_legacy_course_type_field_is_compatible(self, client: TestClient):
+        response = client.post(
+            "/api/tutor/session/start",
+            json={
+                "question": "Explain PID controllers",
+                "pdfId": "graph-task-123",
+                "courseType": "problem_solving",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["finalCourseType"] == "problem_solving"
+        assert data["metadata"]["courseTypeStrategy"] == "auto"
 
     def test_list_sessions_back_jump_and_respond_flow(self, client: TestClient):
         start_response = client.post(

@@ -13,6 +13,9 @@ from app.schemas.learning import LearningEventType, LearningProgress, LearningTr
 from app.services.content_service import ContentService, get_content_service
 from app.schemas.tutor import (
     ContentArtifactType,
+    CourseType,
+    CourseTypeDecision,
+    CourseTypeStrategy,
     ContentRequestResponseMode,
     MessageType,
     TeachingPlan,
@@ -33,6 +36,7 @@ from app.schemas.tutor import (
     TutorSessionStatus,
     TutorSessionsResponse,
 )
+from app.services.course_type_classifier import classify_course_type, resolve_course_type
 from app.services.learning_service import LearningService, get_learning_service
 from app.services.node_service import NodeService, get_node_service
 from app.services.session_service import SessionService, get_session_service
@@ -73,6 +77,12 @@ class TutorService:
         self.learning_service = learning_service or get_learning_service()
 
     def analyze_question(self, request: TutorAnalyzeRequest) -> TutorAnalyzeResponse:
+        auto_decision = self.classify_course_type(request.question, request.context)
+        final_decision = self._resolve_course_type_decision(
+            auto_decision,
+            strategy=request.courseTypeStrategy,
+            course_type_override=request.courseTypeOverride,
+        )
         learner_id = self._resolve_learner_id(request.learnerId, request.context)
         learning_progress = self._safe_get_learning_progress(learner_id, request.pdfId)
         search = self.node_service.semantic_search(request.pdfId, request.question, limit=request.limit)
@@ -103,7 +113,12 @@ class TutorService:
             "mode": request.mode,
             "primaryConceptId": primary_concept,
             "sessionStore": self.session_service.backend_name,
+            "finalCourseType": final_decision.decision.value,
+            "autoDecision": auto_decision.model_dump(mode="json"),
+            "courseTypeStrategy": request.courseTypeStrategy.value,
         }
+        if request.courseTypeOverride is not None:
+            suggested_session["courseTypeOverride"] = request.courseTypeOverride.value
         personalization = self._build_personalization_snapshot(learning_progress)
         if personalization:
             suggested_session["personalization"] = personalization
@@ -116,9 +131,22 @@ class TutorService:
             highlightedNodeIds=highlighted_node_ids,
             evidencePassages=evidence_passages,
             suggestedSession=suggested_session,
+            metadata={
+                "finalCourseType": final_decision.decision.value,
+                "autoDecision": auto_decision.model_dump(mode="json"),
+                "courseTypeDecision": final_decision.model_dump(mode="json"),
+                "courseTypeStrategy": request.courseTypeStrategy.value,
+                "courseTypeOverride": request.courseTypeOverride.value if request.courseTypeOverride else None,
+            },
         )
 
     def start_session(self, request: TutorSessionStartRequest) -> TutorSessionResponse:
+        auto_decision = self.classify_course_type(request.question, request.context)
+        final_decision = self._resolve_course_type_decision(
+            auto_decision,
+            strategy=request.courseTypeStrategy,
+            course_type_override=request.courseTypeOverride,
+        )
         learner_id = self._resolve_learner_id(request.learnerId, request.context)
         learning_progress = self._safe_get_learning_progress(learner_id, request.pdfId)
         personalization = self._build_personalization_snapshot(learning_progress)
@@ -130,6 +158,8 @@ class TutorService:
                 mode=request.mode,
                 context=request.context,
                 limit=3,
+                courseTypeStrategy=request.courseTypeStrategy,
+                courseTypeOverride=request.courseTypeOverride,
             )
         )
         session_id = f"session-{uuid.uuid4()}"
@@ -152,6 +182,11 @@ class TutorService:
             "context": request.context or {},
             "analysis": analysis.model_dump(mode="json"),
             "learningSnapshot": personalization,
+            "courseType": final_decision.decision.value,
+            "courseTypeStrategy": request.courseTypeStrategy.value,
+            "courseTypeOverride": request.courseTypeOverride.value if request.courseTypeOverride else None,
+            "autoCourseTypeDecision": auto_decision.model_dump(mode="json"),
+            "courseTypeDecision": final_decision.model_dump(mode="json"),
             "topics": [concept.node.label for concept in analysis.relevantConcepts],
             "plan": plan.model_dump(mode="json"),
             "messages": [
@@ -350,6 +385,9 @@ class TutorService:
         current_step_index = int(session.get("currentStepIndex", -1))
         current_step = plan.steps[current_step_index] if 0 <= current_step_index < len(plan.steps) else None
         messages = [TutorMessage.model_validate(message) for message in session.get("messages", [])]
+        final_course_type = self._read_final_course_type(session)
+        auto_decision = self._read_auto_course_type_decision(session, final_course_type)
+        final_decision = self._read_final_course_type_decision(session, final_course_type, auto_decision)
         return TutorSessionResponse(
             sessionId=session["id"],
             plan=plan,
@@ -372,7 +410,78 @@ class TutorService:
                 "store": self.session_service.backend_name,
                 "analysis": session.get("analysis"),
                 "learningSnapshot": session.get("learningSnapshot", {}),
+                "finalCourseType": final_course_type.value,
+                "autoDecision": auto_decision.model_dump(mode="json"),
+                "courseTypeDecision": final_decision.model_dump(mode="json"),
+                "courseTypeStrategy": session.get("courseTypeStrategy", CourseTypeStrategy.AUTO.value),
+                "courseTypeOverride": session.get("courseTypeOverride"),
             },
+        )
+
+    def classify_course_type(self, question: str, context: dict[str, Any] | None = None) -> CourseTypeDecision:
+        """Rule-based classifier with deterministic output used by analyze/start."""
+
+        return classify_course_type(question=question, context=context)
+
+    @staticmethod
+    def _resolve_course_type_decision(
+        auto_decision: CourseTypeDecision,
+        *,
+        strategy: CourseTypeStrategy,
+        course_type_override: CourseType | None,
+    ) -> CourseTypeDecision:
+        return resolve_course_type(
+            strategy=strategy,
+            auto_decision=auto_decision,
+            course_type_override=course_type_override,
+        )
+
+    @staticmethod
+    def _read_final_course_type(session: dict[str, Any]) -> CourseType:
+        stored = session.get("courseType")
+        if isinstance(stored, str):
+            try:
+                return CourseType(stored)
+            except ValueError:
+                return CourseType.KNOWLEDGE_LEARNING
+        return CourseType.KNOWLEDGE_LEARNING
+
+    @staticmethod
+    def _read_auto_course_type_decision(
+        session: dict[str, Any],
+        final_course_type: CourseType,
+    ) -> CourseTypeDecision:
+        payload = session.get("autoCourseTypeDecision")
+        if isinstance(payload, dict):
+            try:
+                return CourseTypeDecision.model_validate(payload)
+            except Exception:
+                pass
+        return CourseTypeDecision(
+            decision=final_course_type,
+            confidence=0.5,
+            signals=["legacy_session_default_auto_decision"],
+            overridden=False,
+        )
+
+    @staticmethod
+    def _read_final_course_type_decision(
+        session: dict[str, Any],
+        final_course_type: CourseType,
+        auto_decision: CourseTypeDecision,
+    ) -> CourseTypeDecision:
+        payload = session.get("courseTypeDecision")
+        if isinstance(payload, dict):
+            try:
+                return CourseTypeDecision.model_validate(payload)
+            except Exception:
+                pass
+        overridden = final_course_type != auto_decision.decision
+        return CourseTypeDecision(
+            decision=final_course_type,
+            confidence=1.0 if overridden else auto_decision.confidence,
+            signals=["legacy_session_default_final_decision"],
+            overridden=overridden,
         )
 
     def _build_teaching_plan(

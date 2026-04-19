@@ -6,9 +6,12 @@ import { useKnowledgeGraph } from '../../hooks/useKnowledgeGraph';
 import { ContentRenderer } from '../content/ContentRenderer';
 import { KnowledgeGraph } from '../graph/KnowledgeGraph';
 import type {
+  CourseType,
+  CourseTypeStrategy,
   FeedbackDifficulty,
   LearningProgress,
   TeachingStep,
+  TutorAnalyzeResponse,
   TutorMode,
   TutorSessionResponse,
 } from '../../types/api';
@@ -55,12 +58,33 @@ function sessionPendingReview(session: TutorSessionResponse | null): string[] {
   return toStringArray(pending);
 }
 
+function buildCourseTypePayload(
+  strategy: CourseTypeStrategy,
+  override: CourseType,
+): {
+  courseTypeStrategy: CourseTypeStrategy;
+  courseTypeOverride?: CourseType;
+} {
+  if (strategy === 'manual' || strategy === 'override') {
+    return {
+      courseTypeStrategy: strategy,
+      courseTypeOverride: override,
+    };
+  }
+  return {
+    courseTypeStrategy: strategy,
+  };
+}
+
 export function TutorWorkspace() {
   const [question, setQuestion] = useState('How does PID reduce steady-state error?');
   const [graphId, setGraphId] = useState(DEFAULT_TUTOR_GRAPH_ID);
   const [learnerId, setLearnerId] = useState('learner-demo');
   const [mode, setMode] = useState<TutorMode>('interactive');
+  const [courseTypeStrategy, setCourseTypeStrategy] = useState<CourseTypeStrategy>('auto');
+  const [courseTypeOverride, setCourseTypeOverride] = useState<CourseType>('knowledge_learning');
   const [session, setSession] = useState<TutorSessionResponse | null>(null);
+  const [analysisPreview, setAnalysisPreview] = useState<TutorAnalyzeResponse | null>(null);
   const [responseText, setResponseText] = useState('');
   const [responseConfidence, setResponseConfidence] = useState('medium');
   const [feedbackRating, setFeedbackRating] = useState(4);
@@ -113,6 +137,7 @@ export function TutorWorkspace() {
     try {
       setLoading(true);
       setError(null);
+      const courseTypePayload = buildCourseTypePayload(courseTypeStrategy, courseTypeOverride);
       const context: Record<string, unknown> = { learning_level: 'intermediate' };
       if (normalizedLearnerId) {
         context.learnerId = normalizedLearnerId;
@@ -123,11 +148,37 @@ export function TutorWorkspace() {
         learnerId: normalizedLearnerId || undefined,
         mode,
         context,
+        ...courseTypePayload,
       });
       setSession(result);
       setLatestTrackedStepKey(null);
       setResponseText('');
       await refreshLearningProgress(result);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const previewAnalyze = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const courseTypePayload = buildCourseTypePayload(courseTypeStrategy, courseTypeOverride);
+      const context: Record<string, unknown> = { learning_level: 'intermediate' };
+      if (normalizedLearnerId) {
+        context.learnerId = normalizedLearnerId;
+      }
+      const result = await apiClient.analyzeTutorQuestion({
+        question,
+        pdfId: graphId,
+        learnerId: normalizedLearnerId || undefined,
+        mode,
+        context,
+        ...courseTypePayload,
+      });
+      setAnalysisPreview(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -328,6 +379,33 @@ export function TutorWorkspace() {
           <option value="quiz">quiz</option>
           <option value="problem_solving">problem_solving</option>
         </select>
+        <select
+          className="tutor-page__select"
+          value={courseTypeStrategy}
+          onChange={(event) => setCourseTypeStrategy(event.target.value as CourseTypeStrategy)}
+        >
+          <option value="auto">course type: auto</option>
+          <option value="manual">course type: manual</option>
+          <option value="override">course type: override</option>
+        </select>
+        {(courseTypeStrategy === 'manual' || courseTypeStrategy === 'override') && (
+          <select
+            className="tutor-page__select"
+            value={courseTypeOverride}
+            onChange={(event) => setCourseTypeOverride(event.target.value as CourseType)}
+          >
+            <option value="knowledge_learning">knowledge_learning</option>
+            <option value="problem_solving">problem_solving</option>
+          </select>
+        )}
+        <button
+          className="tutor-page__button tutor-page__button--ghost"
+          type="button"
+          disabled={loading}
+          onClick={() => void previewAnalyze()}
+        >
+          预判课程类型
+        </button>
         <button className="tutor-page__button" type="submit" disabled={loading}>
           {loading ? '处理中...' : '启动会话'}
         </button>
@@ -340,6 +418,14 @@ export function TutorWorkspace() {
           刷新学习进度
         </button>
       </form>
+
+      {analysisPreview && (
+        <div className="tutor-page__status">
+          预分析课程类型: {analysisPreview.metadata?.finalCourseType ?? '-'} | auto:
+          {' '}
+          {analysisPreview.metadata?.autoDecision?.decision ?? '-'}
+        </div>
+      )}
 
       {error && <div className="tutor-page__error">请求失败: {error}</div>}
 

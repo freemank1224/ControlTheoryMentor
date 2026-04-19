@@ -1,4 +1,6 @@
 import type {
+  TutorAnalyzeRequest,
+  TutorAnalyzeResponse,
   ContentGenerateRequest,
   ContentGenerateResponse,
   ContentInteractiveRequest,
@@ -104,6 +106,13 @@ class APIClient {
   // AI Tutor
   async startTutorSession(request: TutorSessionStart): Promise<TutorSessionResponse> {
     return this.request<TutorSessionResponse>('/api/tutor/session/start', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async analyzeTutorQuestion(request: TutorAnalyzeRequest): Promise<TutorAnalyzeResponse> {
+    return this.request<TutorAnalyzeResponse>('/api/tutor/analyze', {
       method: 'POST',
       body: JSON.stringify(request),
     });

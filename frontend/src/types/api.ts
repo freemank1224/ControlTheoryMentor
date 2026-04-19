@@ -61,9 +61,68 @@ export interface TutorSessionStart {
   learnerId?: string;
   mode?: TutorMode;
   context?: Record<string, unknown>;
+  courseTypeStrategy?: CourseTypeStrategy;
+  courseTypeOverride?: CourseType;
+  courseType?: CourseType;
 }
 
 export type TutorMode = 'interactive' | 'tutorial' | 'quiz' | 'problem_solving';
+
+export type CourseType = 'knowledge_learning' | 'problem_solving';
+
+export type CourseTypeStrategy = 'auto' | 'manual' | 'override';
+
+export interface CourseTypeDecision {
+  decision: CourseType;
+  confidence: number;
+  signals: string[];
+  overridden: boolean;
+}
+
+export interface TutorAnalyzeRequest {
+  question: string;
+  pdfId: string;
+  learnerId?: string;
+  mode?: TutorMode;
+  context?: Record<string, unknown>;
+  limit?: number;
+  courseTypeStrategy?: CourseTypeStrategy;
+  courseTypeOverride?: CourseType;
+  courseType?: CourseType;
+}
+
+export interface TutorAnalyzeResponse {
+  graphId: string;
+  question: string;
+  summary: string;
+  relevantConcepts: Array<{
+    node: { id: string; label: string };
+    matchScore: number;
+    summary: string;
+    prerequisitesCount: number;
+    relatedCount: number;
+  }>;
+  highlightedNodeIds: string[];
+  evidencePassages: Array<{
+    chunkId: string;
+    conceptId: string;
+    conceptLabel: string;
+    sourceFile: string;
+    sourceLocation?: string | null;
+    pageStart?: number | null;
+    pageEnd?: number | null;
+    excerpt: string;
+    score: number;
+  }>;
+  suggestedSession: Record<string, unknown>;
+  metadata: {
+    finalCourseType?: CourseType;
+    autoDecision?: CourseTypeDecision;
+    courseTypeDecision?: CourseTypeDecision;
+    courseTypeStrategy?: CourseTypeStrategy;
+    courseTypeOverride?: CourseType | null;
+  } & Record<string, unknown>;
+}
 
 export type ContentArtifactType = 'markdown' | 'mermaid' | 'latex' | 'interactive';
 

@@ -26,6 +26,9 @@ from app.schemas.node import (
     SourceSection,
 )
 from app.schemas.tutor import (
+    CourseType,
+    CourseTypeDecision,
+    CourseTypeStrategy,
     TutorMessage,
     TutorRequest,
     TutorResponse,
@@ -92,6 +95,9 @@ __all__ = [
     "TutorMessage",
     "TutorRequest",
     "TutorResponse",
+    "CourseType",
+    "CourseTypeDecision",
+    "CourseTypeStrategy",
     "TutorAnalyzeRequest",
     "TutorAnalyzeResponse",
     "TutorAnalyzeConcept",

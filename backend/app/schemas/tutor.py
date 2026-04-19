@@ -1,7 +1,7 @@
 """Tutor schemas for AI tutoring interactions."""
 from typing import List, Dict, Any, Optional
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.node import NodeSummary
 
@@ -19,6 +19,30 @@ class TutorMode(str, Enum):
     TUTORIAL = "tutorial"
     QUIZ = "quiz"
     PROBLEM_SOLVING = "problem_solving"
+
+
+class CourseType(str, Enum):
+    """Course planning track used by tutor session orchestration."""
+
+    KNOWLEDGE_LEARNING = "knowledge_learning"
+    PROBLEM_SOLVING = "problem_solving"
+
+
+class CourseTypeStrategy(str, Enum):
+    """How the final course type is selected for analyze/start requests."""
+
+    AUTO = "auto"
+    MANUAL = "manual"
+    OVERRIDE = "override"
+
+
+class CourseTypeDecision(BaseModel):
+    """Classifier decision payload used by API metadata and observability."""
+
+    decision: CourseType = Field(..., description="Classifier-selected course type")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Decision confidence from 0 to 1")
+    signals: List[str] = Field(default_factory=list, description="Signals that influenced the decision")
+    overridden: bool = Field(default=False, description="Whether decision was manually overridden")
 
 
 class TutorSessionStatus(str, Enum):
@@ -129,6 +153,24 @@ class TutorAnalyzeRequest(BaseModel):
     mode: TutorMode = Field(default=TutorMode.INTERACTIVE, description="Desired tutoring mode")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Optional learner context")
     limit: int = Field(default=3, ge=1, le=10, description="Maximum number of concept candidates to return")
+    courseTypeStrategy: CourseTypeStrategy = Field(
+        default=CourseTypeStrategy.AUTO,
+        description="Course type selection strategy: auto/manual/override",
+    )
+    courseTypeOverride: Optional[CourseType] = Field(
+        default=None,
+        description="Optional manual course type when strategy is manual/override",
+    )
+    courseType: Optional[CourseType] = Field(
+        default=None,
+        description="Legacy compatibility field mapped to courseTypeOverride",
+    )
+
+    @model_validator(mode="after")
+    def _normalize_course_type_fields(self):
+        if self.courseTypeOverride is None and self.courseType is not None:
+            self.courseTypeOverride = self.courseType
+        return self
 
 
 class TutorEvidencePassage(BaseModel):
@@ -162,6 +204,7 @@ class TutorAnalyzeResponse(BaseModel):
     highlightedNodeIds: List[str] = Field(default_factory=list, description="Node ids to highlight in the graph view")
     evidencePassages: List[TutorEvidencePassage] = Field(default_factory=list, description="Ranked evidence excerpts from source passages")
     suggestedSession: Dict[str, Any] = Field(default_factory=dict, description="Suggested session bootstrap metadata")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional analysis metadata")
 
 
 class TeachingContentRequest(BaseModel):
@@ -288,6 +331,24 @@ class TutorSessionStartRequest(BaseModel):
     learnerId: Optional[str] = Field(default=None, description="Optional learner identifier for progress tracking")
     mode: TutorMode = Field(default=TutorMode.INTERACTIVE, description="Desired tutoring mode")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Optional learning context")
+    courseTypeStrategy: CourseTypeStrategy = Field(
+        default=CourseTypeStrategy.AUTO,
+        description="Course type selection strategy: auto/manual/override",
+    )
+    courseTypeOverride: Optional[CourseType] = Field(
+        default=None,
+        description="Optional manual course type when strategy is manual/override",
+    )
+    courseType: Optional[CourseType] = Field(
+        default=None,
+        description="Legacy compatibility field mapped to courseTypeOverride",
+    )
+
+    @model_validator(mode="after")
+    def _normalize_course_type_fields(self):
+        if self.courseTypeOverride is None and self.courseType is not None:
+            self.courseTypeOverride = self.courseType
+        return self
 
     class Config:
         json_schema_extra = {

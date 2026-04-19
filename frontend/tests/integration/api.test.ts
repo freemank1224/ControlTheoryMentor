@@ -71,12 +71,23 @@ describe('API Client', () => {
       question: 'What is a PID controller?',
       pdfId: 'pdf-123',
       learnerId: 'learner-1',
+      courseTypeStrategy: 'manual' as const,
+      courseTypeOverride: 'problem_solving' as const,
     };
 
     const mockResponse = {
       sessionId: 'session-123',
       plan: { steps: [] },
-      status: 'ready'
+      status: 'ready',
+      metadata: {
+        finalCourseType: 'problem_solving',
+        autoDecision: {
+          decision: 'knowledge_learning',
+          confidence: 0.62,
+          signals: ['keyword_knowledge:2'],
+          overridden: false,
+        },
+      },
     };
 
     (global.fetch as any).mockResolvedValueOnce({
@@ -87,6 +98,43 @@ describe('API Client', () => {
     const result = await apiClient.startTutorSession(mockRequest);
     expect(result.sessionId).toBe('session-123');
     expect(result.status).toBe('ready');
+    expect(result.metadata?.finalCourseType).toBe('problem_solving');
+  });
+
+  it('should analyze tutor question with strategy and override', async () => {
+    const mockResponse = {
+      graphId: 'graph-task-123',
+      question: 'Given G(s)=1/(s+1), calculate Kp',
+      summary: 'analysis',
+      relevantConcepts: [],
+      highlightedNodeIds: [],
+      evidencePassages: [],
+      suggestedSession: {},
+      metadata: {
+        finalCourseType: 'knowledge_learning',
+        autoDecision: {
+          decision: 'problem_solving',
+          confidence: 0.88,
+          signals: ['numeric_pattern'],
+          overridden: false,
+        },
+      },
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const result = await apiClient.analyzeTutorQuestion({
+      question: 'Given G(s)=1/(s+1), calculate Kp',
+      pdfId: 'graph-task-123',
+      courseTypeStrategy: 'override',
+      courseTypeOverride: 'knowledge_learning',
+    });
+
+    expect(result.metadata.finalCourseType).toBe('knowledge_learning');
+    expect(result.metadata.autoDecision?.decision).toBe('problem_solving');
   });
 
   it('should get learning progress', async () => {
