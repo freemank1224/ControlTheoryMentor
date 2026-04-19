@@ -45,6 +45,13 @@ class APIClient {
       let message = `API Error: ${response.status}`;
       const contentType = response.headers.get('content-type') || '';
 
+      if (response.status === 504) {
+        throw new Error('API Error: 课程生成超时，请稍后重试（后端仍可能在处理）。');
+      }
+      if (response.status === 502 || response.status === 503) {
+        throw new Error('API Error: 后端服务暂时不可用，请稍后重试。');
+      }
+
       try {
         if (contentType.includes('application/json')) {
           const payload = await response.json() as {
@@ -64,7 +71,11 @@ class APIClient {
         } else {
           const text = (await response.text()).trim();
           if (text) {
-            message = `API Error: ${text}`;
+            if (text.startsWith('<!DOCTYPE html>') || text.startsWith('<html')) {
+              message = 'API Error: 接口未返回 JSON，可能是后端服务不可用或网关把错误重写成了前端页面。';
+            } else {
+              message = `API Error: ${text}`;
+            }
           }
         }
       } catch {
@@ -88,7 +99,32 @@ class APIClient {
     });
 
     if (!response.ok) {
-      throw new Error('上传失败');
+      let message = `上传失败 (${response.status})`;
+      const contentType = response.headers.get('content-type') || '';
+      try {
+        if (contentType.includes('application/json')) {
+          const payload = await response.json() as {
+            detail?: string | { message?: string };
+            message?: string;
+          };
+
+          if (typeof payload.detail === 'string' && payload.detail) {
+            message = payload.detail;
+          } else if (payload.detail && typeof payload.detail === 'object' && payload.detail.message) {
+            message = payload.detail.message;
+          } else if (typeof payload.message === 'string' && payload.message) {
+            message = payload.message;
+          }
+        } else {
+          const text = (await response.text()).trim();
+          if (text) {
+            message = text;
+          }
+        }
+      } catch {
+        // Keep the fallback message above.
+      }
+      throw new Error(message);
     }
 
     return response.json();

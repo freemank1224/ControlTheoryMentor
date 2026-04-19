@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from celery import shared_task
+from pypdf.errors import PdfStreamError
 
 from worker.graphify_wrapper import (
     GraphifyConfigurationError,
@@ -82,7 +83,13 @@ def process_pdf_task(
                 "graphify_version": result.get("graphify_version"),
             },
         }
-    except (FileNotFoundError, ValueError, GraphifyConfigurationError, GraphifySemanticExtractionError):
+    except (
+        FileNotFoundError,
+        ValueError,
+        PdfStreamError,
+        GraphifyConfigurationError,
+        GraphifySemanticExtractionError,
+    ):
         logger.exception("Non-retryable Graphify task failure %s", task_id)
         raise
     except Exception as exc:

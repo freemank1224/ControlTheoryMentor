@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { apiClient } from '../../services/api';
 import { useContentArtifact } from '../../hooks/useContentArtifact';
@@ -7,13 +8,9 @@ import { ContentRenderer } from '../content/ContentRenderer';
 import { KnowledgeGraph } from '../graph/KnowledgeGraph';
 import type {
   ContentArtifact,
-  CourseType,
-  CourseTypeStrategy,
   FeedbackDifficulty,
   LearningProgress,
   TeachingStep,
-  TutorAnalyzeResponse,
-  TutorMode,
   TutorSessionResponse,
 } from '../../types/api';
 
@@ -59,46 +56,21 @@ function sessionPendingReview(session: TutorSessionResponse | null): string[] {
   return toStringArray(pending);
 }
 
-function buildCourseTypePayload(
-  strategy: CourseTypeStrategy,
-  override: CourseType,
-): {
-  courseTypeStrategy: CourseTypeStrategy;
-  courseTypeOverride?: CourseType;
-} {
-  if (strategy === 'manual' || strategy === 'override') {
-    return {
-      courseTypeStrategy: strategy,
-      courseTypeOverride: override,
-    };
-  }
-  return {
-    courseTypeStrategy: strategy,
-  };
-}
-
 export function TutorWorkspace() {
+  const [searchParams] = useSearchParams();
+  const queryGraphId = searchParams.get('graphId') || '';
+  const storedGraphId = window.localStorage.getItem('latestGraphId') || '';
+  const initialGraphId = queryGraphId || DEFAULT_TUTOR_GRAPH_ID || storedGraphId;
+
   const [question, setQuestion] = useState('');
-  const [graphId, setGraphId] = useState(DEFAULT_TUTOR_GRAPH_ID);
+  const [graphId, setGraphId] = useState(initialGraphId);
   const [learnerId, setLearnerId] = useState('');
-  const [mode, setMode] = useState<TutorMode>('interactive');
-  const [courseTypeStrategy, setCourseTypeStrategy] = useState<CourseTypeStrategy>('auto');
-  const [courseTypeOverride, setCourseTypeOverride] = useState<CourseType>('knowledge_learning');
   const [session, setSession] = useState<TutorSessionResponse | null>(null);
-  const [analysisPreview, setAnalysisPreview] = useState<TutorAnalyzeResponse | null>(null);
   const [responseText, setResponseText] = useState('');
   const [responseConfidence, setResponseConfidence] = useState('medium');
   const [feedbackRating, setFeedbackRating] = useState(4);
   const [feedbackDifficulty, setFeedbackDifficulty] = useState<FeedbackDifficulty>('appropriate');
   const [feedbackComment, setFeedbackComment] = useState('');
-  const [generationStyle, setGenerationStyle] = useState('instructional');
-  const [generationDetail, setGenerationDetail] = useState('balanced');
-  const [generationPace, setGenerationPace] = useState('normal');
-  const [generationAttempt, setGenerationAttempt] = useState(1);
-  const [includeImage, setIncludeImage] = useState(true);
-  const [includeComic, setIncludeComic] = useState(false);
-  const [includeAnimation, setIncludeAnimation] = useState(false);
-  const [generationStatus, setGenerationStatus] = useState<string | null>(null);
   const [overrideArtifact, setOverrideArtifact] = useState<ContentArtifact | null>(null);
   const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
   const [latestTrackedStepKey, setLatestTrackedStepKey] = useState<string | null>(null);
@@ -130,6 +102,18 @@ export function TutorWorkspace() {
   }, [learningProgress, pendingReviewFromSession]);
   const { data: graphData, loading: graphLoading, error: graphError } = useKnowledgeGraph(graphIdForView);
 
+  useEffect(() => {
+    if (queryGraphId && queryGraphId !== graphId) {
+      setGraphId(queryGraphId);
+    }
+  }, [queryGraphId, graphId]);
+
+  useEffect(() => {
+    if (graphId) {
+      window.localStorage.setItem('latestGraphId', graphId);
+    }
+  }, [graphId]);
+
   const refreshLearningProgress = async (
     targetSession: TutorSessionResponse | null,
     explicitGraphId?: string,
@@ -148,7 +132,6 @@ export function TutorWorkspace() {
     try {
       setLoading(true);
       setError(null);
-      const courseTypePayload = buildCourseTypePayload(courseTypeStrategy, courseTypeOverride);
       const context: Record<string, unknown> = { learning_level: 'intermediate' };
       if (normalizedLearnerId) {
         context.learnerId = normalizedLearnerId;
@@ -157,39 +140,15 @@ export function TutorWorkspace() {
         question,
         pdfId: graphId,
         learnerId: normalizedLearnerId || undefined,
-        mode,
+        mode: 'interactive',
         context,
-        ...courseTypePayload,
+        courseTypeStrategy: 'auto',
       });
-      setSession(result);
+      const hydrated = await apiClient.nextTutorSessionStep(result.sessionId);
+      setSession(hydrated);
       setLatestTrackedStepKey(null);
       setResponseText('');
-      await refreshLearningProgress(result);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const previewAnalyze = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const courseTypePayload = buildCourseTypePayload(courseTypeStrategy, courseTypeOverride);
-      const context: Record<string, unknown> = { learning_level: 'intermediate' };
-      if (normalizedLearnerId) {
-        context.learnerId = normalizedLearnerId;
-      }
-      const result = await apiClient.analyzeTutorQuestion({
-        question,
-        pdfId: graphId,
-        learnerId: normalizedLearnerId || undefined,
-        mode,
-        context,
-        ...courseTypePayload,
-      });
-      setAnalysisPreview(result);
+      await refreshLearningProgress(hydrated);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -207,7 +166,6 @@ export function TutorWorkspace() {
       const result = await apiClient.nextTutorSessionStep(session.sessionId);
       setSession(result);
       setOverrideArtifact(null);
-      setGenerationStatus(null);
       setResponseText('');
       await refreshLearningProgress(result);
     } catch (err) {
@@ -227,7 +185,6 @@ export function TutorWorkspace() {
       const result = await apiClient.backTutorSessionStep(session.sessionId);
       setSession(result);
       setOverrideArtifact(null);
-      setGenerationStatus(null);
       setResponseText('');
       await refreshLearningProgress(result);
     } catch (err) {
@@ -247,7 +204,6 @@ export function TutorWorkspace() {
       const result = await apiClient.jumpTutorSessionStep(session.sessionId, { stepId: step.id });
       setSession(result);
       setOverrideArtifact(null);
-      setGenerationStatus(null);
       setResponseText('');
       await refreshLearningProgress(result);
     } catch (err) {
@@ -310,82 +266,8 @@ export function TutorWorkspace() {
     }
   };
 
-  const applyGenerationParameters = async () => {
-    if (!activeStep?.content?.contentRequest) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      setGenerationStatus(null);
-
-      const requestedTypes = new Set(activeStep.content.contentRequest.targetContentTypes);
-      if (includeImage) {
-        requestedTypes.add('image');
-      }
-      if (includeComic) {
-        requestedTypes.add('comic');
-      }
-      if (includeAnimation) {
-        requestedTypes.add('animation');
-      }
-
-      const renderHint = includeImage ? 'image' : activeStep.content.contentRequest.renderHint;
-      const generated = await apiClient.generateContent({
-        contentRequest: {
-          ...activeStep.content.contentRequest,
-          targetContentTypes: Array.from(requestedTypes),
-          renderHint,
-        },
-        forceRegenerate: true,
-        generationParams: {
-          style: generationStyle,
-          detail: generationDetail,
-          pace: generationPace,
-          attempt: generationAttempt,
-          imageTimeoutMs: 1500,
-        },
-      });
-
-      setOverrideArtifact(generated.artifact);
-      const imageMeta = (generated.artifact.image ?? null) as Record<string, unknown> | null;
-      const imageMode = imageMeta && typeof imageMeta.source === 'string' ? imageMeta.source : 'n/a';
-      setGenerationStatus(`参数已应用: style=${generationStyle}, detail=${generationDetail}, pace=${generationPace}, image=${imageMode}`);
-
-      if (session && normalizedLearnerId) {
-        const conceptId = activeStep.relatedTopics?.[0];
-        const tracking = await apiClient.trackLearningEvent({
-          learnerId: normalizedLearnerId,
-          graphId: graphIdForView,
-          sessionId: session.sessionId,
-          stepId: activeStep.id,
-          conceptId,
-          eventType: 'parameter_adjusted',
-          metadata: {
-            source: 'tutor_workspace',
-            style: generationStyle,
-            detail: generationDetail,
-            pace: generationPace,
-            attempt: generationAttempt,
-            includeImage,
-            includeComic,
-            includeAnimation,
-            imageMode,
-          },
-        });
-        setLearningProgress(tracking.progress);
-      }
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     setOverrideArtifact(null);
-    setGenerationStatus(null);
   }, [contentId]);
 
   useEffect(() => {
@@ -440,7 +322,7 @@ export function TutorWorkspace() {
     <div className="tutor-page">
       <header className="tutor-page__hero">
         <h2 className="tutor-page__title">AI 导师</h2>
-        <p className="tutor-page__subtitle">P3 内容生成与渲染链路：session step to content artifact to ContentRenderer</p>
+        <p className="tutor-page__subtitle">拿到图谱后，只需提问一次，系统会自动判别问题类型并生成课程内容。</p>
       </header>
 
       <form className="tutor-page__start" onSubmit={startSession}>
@@ -451,76 +333,38 @@ export function TutorWorkspace() {
           placeholder="输入学习问题"
           required
         />
-        <input
-          className="tutor-page__input"
-          value={graphId}
-          onChange={(event) => setGraphId(event.target.value)}
-          placeholder="graph id"
-          required
-        />
-        <input
-          className="tutor-page__input"
-          value={learnerId}
-          onChange={(event) => setLearnerId(event.target.value)}
-          placeholder="learner id (用于学习闭环)"
-        />
-        <select
-          className="tutor-page__select"
-          value={mode}
-          onChange={(event) => setMode(event.target.value as TutorMode)}
-        >
-          <option value="interactive">interactive</option>
-          <option value="tutorial">tutorial</option>
-          <option value="quiz">quiz</option>
-          <option value="problem_solving">problem_solving</option>
-        </select>
-        <select
-          className="tutor-page__select"
-          value={courseTypeStrategy}
-          onChange={(event) => setCourseTypeStrategy(event.target.value as CourseTypeStrategy)}
-        >
-          <option value="auto">course type: auto</option>
-          <option value="manual">course type: manual</option>
-          <option value="override">course type: override</option>
-        </select>
-        {(courseTypeStrategy === 'manual' || courseTypeStrategy === 'override') && (
-          <select
-            className="tutor-page__select"
-            value={courseTypeOverride}
-            onChange={(event) => setCourseTypeOverride(event.target.value as CourseType)}
-          >
-            <option value="knowledge_learning">knowledge_learning</option>
-            <option value="problem_solving">problem_solving</option>
-          </select>
-        )}
-        <button
-          className="tutor-page__button tutor-page__button--ghost"
-          type="button"
-          disabled={loading}
-          onClick={() => void previewAnalyze()}
-        >
-          预判课程类型
-        </button>
         <button className="tutor-page__button" type="submit" disabled={loading}>
-          {loading ? '处理中...' : '启动会话'}
+          {loading ? '处理中...' : '生成课程'}
         </button>
-        <button
-          className="tutor-page__button tutor-page__button--ghost"
-          type="button"
-          disabled={!normalizedLearnerId || loading}
-          onClick={() => void refreshLearningProgress(session)}
-        >
-          刷新学习进度
-        </button>
-      </form>
+        <div className="tutor-page__helper">当前图谱: {graphId || '未选择'}</div>
 
-      {analysisPreview && (
-        <div className="tutor-page__status">
-          预分析课程类型: {analysisPreview.metadata?.finalCourseType ?? '-'} | auto:
-          {' '}
-          {analysisPreview.metadata?.autoDecision?.decision ?? '-'}
-        </div>
-      )}
+        <details className="tutor-page__advanced">
+          <summary>高级设置（可选）</summary>
+          <div className="tutor-page__advanced-body">
+            <input
+              className="tutor-page__input"
+              value={graphId}
+              onChange={(event) => setGraphId(event.target.value)}
+              placeholder="graph id"
+              required
+            />
+            <input
+              className="tutor-page__input"
+              value={learnerId}
+              onChange={(event) => setLearnerId(event.target.value)}
+              placeholder="learner id (用于学习闭环)"
+            />
+            <button
+              className="tutor-page__button tutor-page__button--ghost"
+              type="button"
+              disabled={!normalizedLearnerId || loading}
+              onClick={() => void refreshLearningProgress(session)}
+            >
+              刷新学习进度
+            </button>
+          </div>
+        </details>
+      </form>
 
       {error && <div className="tutor-page__error">请求失败: {error}</div>}
 
@@ -562,92 +406,6 @@ export function TutorWorkspace() {
               >
                 刷新内容
               </button>
-            </div>
-
-            <div className="tutor-page__response">
-              <div className="tutor-page__response-meta">
-                <label htmlFor="generation-style">style:</label>
-                <select
-                  id="generation-style"
-                  className="tutor-page__select tutor-page__select--compact"
-                  value={generationStyle}
-                  onChange={(event) => setGenerationStyle(event.target.value)}
-                >
-                  <option value="instructional">instructional</option>
-                  <option value="blueprint">blueprint</option>
-                  <option value="comic">comic</option>
-                  <option value="minimal">minimal</option>
-                </select>
-                <label htmlFor="generation-detail">detail:</label>
-                <select
-                  id="generation-detail"
-                  className="tutor-page__select tutor-page__select--compact"
-                  value={generationDetail}
-                  onChange={(event) => setGenerationDetail(event.target.value)}
-                >
-                  <option value="low">low</option>
-                  <option value="balanced">balanced</option>
-                  <option value="high">high</option>
-                </select>
-                <label htmlFor="generation-pace">pace:</label>
-                <select
-                  id="generation-pace"
-                  className="tutor-page__select tutor-page__select--compact"
-                  value={generationPace}
-                  onChange={(event) => setGenerationPace(event.target.value)}
-                >
-                  <option value="fast">fast</option>
-                  <option value="normal">normal</option>
-                  <option value="deep">deep</option>
-                </select>
-                <label htmlFor="generation-attempt">attempt:</label>
-                <input
-                  id="generation-attempt"
-                  className="tutor-page__input tutor-page__input--compact"
-                  type="number"
-                  min={1}
-                  max={5}
-                  value={generationAttempt}
-                  onChange={(event) => setGenerationAttempt(Number(event.target.value) || 1)}
-                />
-              </div>
-
-              <div className="tutor-page__response-meta">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={includeImage}
-                    onChange={(event) => setIncludeImage(event.target.checked)}
-                  />
-                  image
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={includeComic}
-                    onChange={(event) => setIncludeComic(event.target.checked)}
-                  />
-                  comic
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={includeAnimation}
-                    onChange={(event) => setIncludeAnimation(event.target.checked)}
-                  />
-                  animation
-                </label>
-                <button
-                  className="tutor-page__button tutor-page__button--ghost"
-                  type="button"
-                  disabled={loading || !activeStep?.content?.contentRequest}
-                  onClick={applyGenerationParameters}
-                >
-                  应用参数并重生成
-                </button>
-              </div>
-
-              {generationStatus && <div className="tutor-page__status">{generationStatus}</div>}
             </div>
 
             {session?.needsUserResponse && (

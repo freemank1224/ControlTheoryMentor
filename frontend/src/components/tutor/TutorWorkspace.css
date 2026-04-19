@@ -20,13 +20,40 @@
 
 .tutor-page__start {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.65rem;
   background: linear-gradient(160deg, rgba(201, 100, 66, 0.1), rgba(232, 230, 220, 0.7));
   border: 1px solid var(--border-warm);
   border-radius: var(--card-radius);
   padding: 0.85rem;
   margin-bottom: 1rem;
+}
+
+.tutor-page__helper {
+  grid-column: 1 / -1;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.tutor-page__advanced {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--border-cream);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0.4rem 0.6rem;
+}
+
+.tutor-page__advanced summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.tutor-page__advanced-body {
+  margin-top: 0.55rem;
+  display: grid;
+  gap: 0.5rem;
 }
 
 .tutor-page__input,

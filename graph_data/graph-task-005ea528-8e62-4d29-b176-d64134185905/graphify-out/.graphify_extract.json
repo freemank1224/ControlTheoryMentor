@@ -1,0 +1,1062 @@
+{
+  "nodes": [
+    {
+      "id": "paper_826adabbe7cd",
+      "label": "pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P1-P3"
+    },
+    {
+      "id": "pdf_8c773b1d_node_1",
+      "label": "CAN Bus Header J17",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_2",
+      "label": "Fan Connector J13",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_3",
+      "label": "RTC Backup Battery Connector J3",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_4",
+      "label": "DC Power Jack J16",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_5",
+      "label": "PoE Header J19",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_6",
+      "label": "Backpower Header J18",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_7",
+      "label": "VDD_5V_SYS Power Rail",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_8",
+      "label": "VDD_3V3_SYS Power Rail",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_9",
+      "label": "VDD_1V8 Power Rail",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_10",
+      "label": "GS9230 DC-DC Converter",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_11",
+      "label": "AP2127K LDO Regulator",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_12",
+      "label": "AP22811 Load Switch",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_13",
+      "label": "Carrier Board Mechanical Dimensions",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_14",
+      "label": "Developer Kit Mechanical Dimensions",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_15",
+      "label": "Power Multiplexing Architecture",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_16",
+      "label": "M.2 Key Connect",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37"
+    },
+    {
+      "id": "pdf_8c773b1d_node_17",
+      "label": "Power Jack",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13"
+    },
+    {
+      "id": "pdf_8c773b1d_node_18",
+      "label": "Button Header",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13"
+    },
+    {
+      "id": "pdf_8c773b1d_node_19",
+      "label": "USB Multiplexer",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13"
+    },
+    {
+      "id": "pdf_8c773b1d_node_20",
+      "label": "USB Hub",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_USB_3_0_Type_A",
+      "label": "USB 3.0 Type A Connector",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_USB_Hub",
+      "label": "USB Hub",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Gigabit_Ethernet_RJ45_J15",
+      "label": "Gigabit Ethernet RJ45 Connector J15",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Magnetics_Device",
+      "label": "Ethernet Magnetics Device",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_DisplayPort_J8",
+      "label": "DisplayPort Connector J8",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PI3AUX221ZTAEX",
+      "label": "PI3AUX221ZTAEX Device",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_M2_Key_E_J10",
+      "label": "M.2 Key E Slot J10",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_M2_Key_M_J11",
+      "label": "M.2 Key M Slot J11",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_M2_Key_M_J24",
+      "label": "M.2 Key M Slot J24",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PCIe_x4_Gen4",
+      "label": "PCIe x4 Gen4 Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PCIe_x2_Gen4",
+      "label": "PCIe x2 Gen4 Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVMe_Storage",
+      "label": "NVMe Storage",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PCIe_IF0",
+      "label": "PCIe Interface 0",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_1",
+      "label": "Jetson Orin Nano Developer Kit Carrier Board",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_2",
+      "label": "40-pin Expansion Header J12",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_3",
+      "label": "Astron Technology 27-0169H-220-1G-H Connector",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_4",
+      "label": "3.3V Signal Level Standard",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_5",
+      "label": "I2C1 Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_6",
+      "label": "I2C0 Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_7",
+      "label": "SPI0 Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_8",
+      "label": "SPI1 Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_9",
+      "label": "I2S0 Audio Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_10",
+      "label": "UART1 Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_11",
+      "label": "UART2 DEBUG Interface",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_12",
+      "label": "Button Header J14",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_13",
+      "label": "SYS_RESET Signal",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_14",
+      "label": "FORCE_RECOVERY Signal",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_15",
+      "label": "SLEEP/WAKE Signal",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_16",
+      "label": "PC_LED Sleep Indicator",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Corporation",
+      "label": "NVIDIA Corporation",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Jetson_Orin_Nano",
+      "label": "Jetson Orin Nano",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Orin",
+      "label": "NVIDIA Orin",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_DisplayPort",
+      "label": "DisplayPort",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_HDMI",
+      "label": "HDMI",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Terms_of_Sale",
+      "label": "Terms of Sale",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Materials",
+      "label": "Materials",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_VESA",
+      "label": "VESA",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    },
+    {
+      "id": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_HDMI_Licensing",
+      "label": "HDMI Licensing LLC",
+      "file_type": "paper",
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38"
+    }
+  ],
+  "edges": [
+    {
+      "source": "pdf_8c773b1d_node_1",
+      "target": "pdf_8c773b1d_node_2",
+      "relation": "contains",
+      "confidence": "INFERRED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13",
+      "weight": 1.0
+    },
+    {
+      "source": "pdf_8c773b1d_node_2",
+      "target": "pdf_8c773b1d_node_3",
+      "relation": "contains",
+      "confidence": "INFERRED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13",
+      "weight": 1.0
+    },
+    {
+      "source": "pdf_8c773b1d_node_2",
+      "target": "pdf_8c773b1d_node_4",
+      "relation": "contains",
+      "confidence": "INFERRED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13",
+      "weight": 1.0
+    },
+    {
+      "source": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Corporation",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Jetson_Orin_Nano",
+      "relation": "mentions",
+      "confidence": "INFERRED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Corporation",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Orin",
+      "relation": "mentions",
+      "confidence": "INFERRED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Corporation",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_DisplayPort",
+      "relation": "mentions",
+      "confidence": "INFERRED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_1",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_2",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_3",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_4",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_5",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_6",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_7",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_8",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_9",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_10",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_11",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_12",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_13",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_14",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_15",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_16",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P29-P37",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_17",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_18",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_19",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_node_20",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P7-P13",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_USB_3_0_Type_A",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_USB_Hub",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Gigabit_Ethernet_RJ45_J15",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Magnetics_Device",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_DisplayPort_J8",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PI3AUX221ZTAEX",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_M2_Key_E_J10",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_M2_Key_M_J11",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_M2_Key_M_J24",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PCIe_x4_Gen4",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PCIe_x2_Gen4",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVMe_Storage",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_PCIe_IF0",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P14-P18",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_1",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_2",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_3",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_4",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_5",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_6",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_7",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_8",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_9",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_10",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_11",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_12",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_13",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_14",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_15",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_16",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P25-P28",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Corporation",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Jetson_Orin_Nano",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_NVIDIA_Orin",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_DisplayPort",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_HDMI",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Terms_of_Sale",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_Materials",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_VESA",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    },
+    {
+      "source": "paper_826adabbe7cd",
+      "target": "pdf_8c773b1d_4e44_4430_ab07_d2b63fe044e0_HDMI_Licensing",
+      "relation": "mentions",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf",
+      "source_location": "P38",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 18972,
+  "output_tokens": 9600
+}

@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Storage
     PDF_STORAGE_PATH: str = "./pdfs"
     GRAPH_ARTIFACTS_PATH: str = "./graph_data"
+    MAX_UPLOAD_FILE_SIZE_MB: int = 1024
     MAX_PDF_PAGES: int = 1200
 
 settings = Settings()

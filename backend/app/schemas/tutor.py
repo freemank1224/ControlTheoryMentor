@@ -225,6 +225,10 @@ class TeachingContentRequest(BaseModel):
     conceptIds: List[str] = Field(default_factory=list, description="Concept ids available to content generation")
     highlightedNodeIds: List[str] = Field(default_factory=list, description="Graph node ids the UI should highlight for this step")
     evidencePassageIds: List[str] = Field(default_factory=list, description="Source passage chunk ids relevant to this step")
+    evidenceExcerpts: List[str] = Field(
+        default_factory=list,
+        description="Sentence-level evidence excerpts used to ground generated content",
+    )
     targetContentTypes: List[ContentArtifactType] = Field(
         default_factory=lambda: [ContentArtifactType.MARKDOWN],
         description="Requested artifact kinds for downstream content generation",

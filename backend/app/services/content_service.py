@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -154,6 +155,7 @@ class ContentService:
         payload = {
             "request": request.model_dump(mode="json"),
             "generationParams": generation_params.model_dump(mode="json"),
+            "generatorVersion": os.getenv("CONTENT_GENERATOR_VERSION", "v2"),
         }
         fingerprint = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
@@ -171,7 +173,16 @@ class ContentService:
         requested_types = request.targetContentTypes or [ContentArtifactType.MARKDOWN]
         render_hint = request.renderHint
 
-        markdown = self._generate_markdown(request, generation_params) if ContentArtifactType.MARKDOWN in requested_types else None
+        markdown_meta: dict[str, Any] = {
+            "source": "not_requested",
+            "provider": None,
+            "model": None,
+            "llmAttempted": False,
+            "llmFallbackReason": None,
+        }
+        markdown = None
+        if ContentArtifactType.MARKDOWN in requested_types:
+            markdown, markdown_meta = self._generate_markdown(request, generation_params)
         mermaid = self._generate_mermaid(request) if ContentArtifactType.MERMAID in requested_types else None
         latex = self._generate_latex(request) if ContentArtifactType.LATEX in requested_types else None
         image = None
@@ -186,7 +197,7 @@ class ContentService:
             if image.get("source") == "fallback":
                 image_generation_meta["fallbackReason"] = image.get("fallbackReason")
                 if markdown is None:
-                    markdown = self._generate_markdown(request, generation_params)
+                    markdown, markdown_meta = self._generate_markdown(request, generation_params)
                 if render_hint == ContentArtifactType.IMAGE:
                     render_hint = ContentArtifactType.MARKDOWN
 
@@ -219,7 +230,12 @@ class ContentService:
             createdAt=now,
             updatedAt=now,
             metadata={
-                "generator": "template-v1",
+                "generator": "llm-v1" if markdown_meta.get("source") == "llm" else "template-v2",
+                "contentSource": markdown_meta.get("source"),
+                "provider": markdown_meta.get("provider"),
+                "model": markdown_meta.get("model"),
+                "llmAttempted": markdown_meta.get("llmAttempted"),
+                "llmFallbackReason": markdown_meta.get("llmFallbackReason"),
                 "responseMode": request.responseMode,
                 "generationParams": generation_params.model_dump(mode="json"),
                 "imageGeneration": image_generation_meta,
@@ -227,8 +243,30 @@ class ContentService:
             },
         )
 
+    def _generate_markdown(
+        self,
+        request: TeachingContentRequest,
+        generation_params: ContentGenerationParams,
+    ) -> tuple[str, dict[str, Any]]:
+        llm_text, llm_meta = self._generate_markdown_with_llm(request, generation_params)
+        if llm_text:
+            return llm_text, {
+                "source": "llm",
+                "provider": llm_meta.get("provider"),
+                "model": llm_meta.get("model"),
+                "llmAttempted": bool(llm_meta.get("attempted")),
+                "llmFallbackReason": None,
+            }
+        return self._generate_markdown_template(request, generation_params), {
+            "source": "template",
+            "provider": "template",
+            "model": os.getenv("CONTENT_GENERATOR_VERSION", "v2"),
+            "llmAttempted": bool(llm_meta.get("attempted")),
+            "llmFallbackReason": llm_meta.get("error"),
+        }
+
     @staticmethod
-    def _generate_markdown(request: TeachingContentRequest, generation_params: ContentGenerationParams) -> str:
+    def _generate_markdown_template(request: TeachingContentRequest, generation_params: ContentGenerationParams) -> str:
         lines = [
             f"## {request.stepTitle}",
             "",
@@ -266,6 +304,132 @@ class ContentService:
             )
 
         return "\n".join(lines)
+
+    def _generate_markdown_with_llm(
+        self,
+        request: TeachingContentRequest,
+        generation_params: ContentGenerationParams,
+    ) -> tuple[str | None, dict[str, Any]]:
+        api_key = (
+            os.getenv("CONTENT_LLM_API_KEY")
+            or os.getenv("GRAPHIFY_LLM_API_KEY")
+            or os.getenv("OPENAI_API_KEY")
+        )
+        model = (
+            os.getenv("CONTENT_LLM_MODEL")
+            or os.getenv("GRAPHIFY_LLM_MODEL")
+            or os.getenv("OPENAI_MODEL")
+        )
+        base_url = (
+            os.getenv("CONTENT_LLM_BASE_URL")
+            or os.getenv("GRAPHIFY_LLM_BASE_URL")
+            or os.getenv("OPENAI_BASE_URL")
+            or "https://api.openai.com/v1"
+        ).rstrip("/")
+        timeout_seconds = float(os.getenv("CONTENT_LLM_TIMEOUT_SECONDS", "45"))
+        max_tokens = int(os.getenv("CONTENT_LLM_MAX_OUTPUT_TOKENS", "900"))
+        provider = "anthropic-compatible" if "/anthropic" in base_url.lower() else "openai-compatible"
+
+        meta: dict[str, Any] = {
+            "attempted": bool(api_key and model),
+            "provider": provider,
+            "model": model,
+            "error": None,
+        }
+
+        if not api_key or not model:
+            meta["error"] = "missing_api_key_or_model"
+            return None, meta
+
+        system_prompt = (
+            "你是控制理论导师内容生成器。输出高质量教学 Markdown。"
+            "要求：基于问题和图谱概念，给出结构化讲解、关键点、误区提醒和一个小练习。"
+            "禁止返回 JSON，禁止代码块包裹，直接输出 Markdown 正文。"
+        )
+        user_prompt = (
+            f"stepTitle: {request.stepTitle}\n"
+            f"objective: {request.objective}\n"
+            f"question: {request.question}\n"
+            f"sessionMode: {request.sessionMode.value}\n"
+            f"learnerLevel: {request.learnerLevel}\n"
+            f"primaryConceptId: {request.primaryConceptId or '-'}\n"
+            f"conceptIds: {', '.join(request.conceptIds[:8]) if request.conceptIds else '-'}\n"
+            f"evidencePassageIds: {', '.join(request.evidencePassageIds[:6]) if request.evidencePassageIds else '-'}\n"
+            f"style: {generation_params.style}, detail: {generation_params.detail}, pace: {generation_params.pace}\n"
+            "\n请输出：\n"
+            "1) 标题\n2) 三到五个关键知识点\n3) 一个常见误区\n4) 一个微型练习题\n"
+            "篇幅控制在 220~420 中文字。"
+        )
+
+        try:
+            if "/anthropic" in base_url.lower():
+                messages_url = f"{base_url}/v1/messages" if not base_url.endswith("/v1/messages") else base_url
+                payload = {
+                    "model": model,
+                    "temperature": 0.4,
+                    "max_tokens": max_tokens,
+                    "system": system_prompt,
+                    "messages": [{"role": "user", "content": [{"type": "text", "text": user_prompt}]}],
+                }
+                request_obj = Request(
+                    messages_url,
+                    data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "x-api-key": api_key,
+                        "anthropic-version": os.getenv("GRAPHIFY_LLM_ANTHROPIC_VERSION", "2023-06-01"),
+                        "content-type": "application/json",
+                    },
+                    method="POST",
+                )
+                with urlopen(request_obj, timeout=max(timeout_seconds, 5.0)) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                blocks = data.get("content", [])
+                text = "\n".join(
+                    block.get("text", "")
+                    for block in blocks
+                    if isinstance(block, dict) and block.get("type") == "text"
+                ).strip()
+                if text:
+                    return text, meta
+                meta["error"] = "empty_response"
+                return None, meta
+
+            completions_url = f"{base_url}/chat/completions"
+            payload = {
+                "model": model,
+                "temperature": 0.4,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+            }
+            request_obj = Request(
+                completions_url,
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "content-type": "application/json",
+                },
+                method="POST",
+            )
+            with urlopen(request_obj, timeout=max(timeout_seconds, 5.0)) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            choices = data.get("choices", [])
+            if not choices:
+                meta["error"] = "no_choices"
+                return None, meta
+            content = choices[0].get("message", {}).get("content", "")
+            text = content.strip() if isinstance(content, str) else ""
+            if text:
+                return text, meta
+            meta["error"] = "empty_response"
+            return None, meta
+        except Exception as exc:
+            raw_error = f"{type(exc).__name__}:{exc}"
+            meta["error"] = raw_error[:220]
+            return None, meta
 
     @staticmethod
     def _sanitize_mermaid_label(label: str) -> str:

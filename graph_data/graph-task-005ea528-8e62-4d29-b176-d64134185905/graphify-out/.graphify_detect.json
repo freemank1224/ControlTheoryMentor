@@ -1,0 +1,17 @@
+{
+  "files": {
+    "code": [],
+    "document": [],
+    "paper": [
+      "/shared/graph_data/graph-task-005ea528-8e62-4d29-b176-d64134185905/raw/pdf-8c773b1d-4e44-4430-ab07-d2b63fe044e0.pdf"
+    ],
+    "image": [],
+    "video": []
+  },
+  "total_files": 1,
+  "total_words": 8933,
+  "needs_graph": false,
+  "warning": "Corpus is ~8,933 words - fits in a single context window. You may not need a graph.",
+  "skipped_sensitive": [],
+  "graphifyignore_patterns": 0
+}

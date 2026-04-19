@@ -1,6 +1,7 @@
 services:
   neo4j:
     image: neo4j:5.15-community
+    restart: unless-stopped
     environment:
       NEO4J_AUTH: neo4j/password
       NEO4J_dbms_memory_heap_max__size: 2G
@@ -12,11 +13,17 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
     volumes:
       - redis_data:/data
 
   backend:
     build: ./backend
+    restart: unless-stopped
     ports:
       - "18000:8000"
     env_file:
@@ -27,6 +34,7 @@ services:
       NEO4J_PASSWORD: password
       REDIS_URL: redis://redis:6379/0
       GRAPH_ARTIFACTS_PATH: /shared/graph_data
+      MAX_UPLOAD_FILE_SIZE_MB: ${MAX_UPLOAD_FILE_SIZE_MB:-1024}
     depends_on:
       - neo4j
       - redis
@@ -37,6 +45,8 @@ services:
 
   worker:
     build: ./worker
+    restart: unless-stopped
+    stop_grace_period: 15m
     env_file:
       - .env
     environment:
@@ -51,6 +61,9 @@ services:
       GRAPHIFY_LLM_TIMEOUT_SECONDS: ${GRAPHIFY_LLM_TIMEOUT_SECONDS:-120}
       GRAPHIFY_LLM_MAX_CHUNK_CHARS: ${GRAPHIFY_LLM_MAX_CHUNK_CHARS:-50000}
       GRAPHIFY_LLM_MAX_OUTPUT_TOKENS: ${GRAPHIFY_LLM_MAX_OUTPUT_TOKENS:-4000}
+      CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-0}
+      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-0}
+      CELERY_VISIBILITY_TIMEOUT: ${CELERY_VISIBILITY_TIMEOUT:-43200}
     depends_on:
       - neo4j
       - redis
@@ -61,6 +74,7 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     ports:
       - "5173:8080"
     depends_on:

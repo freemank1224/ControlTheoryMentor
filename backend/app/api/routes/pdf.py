@@ -17,6 +17,8 @@ from app.celery_client import get_celery_app, TASK_PROCESS_PDF
 
 router = APIRouter(prefix="/pdf", tags=["PDF"])
 
+UPLOAD_CHUNK_SIZE_BYTES = 1024 * 1024
+
 # In-memory storage for demo purposes
 pdf_storage = {}
 
@@ -45,11 +47,6 @@ async def upload_pdf(file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only PDF files are allowed.")
 
-    # Validate file size
-    content = await file.read()
-    if len(content) > 50 * 1024 * 1024:  # 50MB limit
-        raise HTTPException(status_code=400, detail="File too large. Maximum size is 50MB.")
-
     # Create PDF storage directory if it doesn't exist
     pdf_dir = Path(settings.PDF_STORAGE_PATH)
     pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -58,10 +55,29 @@ async def upload_pdf(file: UploadFile = File(...)):
     task_id = f"task-{uuid.uuid4()}"
     pdf_id = f"pdf-{uuid.uuid4()}"
 
-    # Save file
+    # Save file in chunks to avoid loading large PDFs fully into memory.
     file_path = pdf_dir / f"{pdf_id}.pdf"
-    with open(file_path, "wb") as f:
-        f.write(content)
+    max_file_size_bytes = settings.MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024
+    bytes_written = 0
+    try:
+        with open(file_path, "wb") as output_handle:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_SIZE_BYTES)
+                if not chunk:
+                    break
+                bytes_written += len(chunk)
+                if bytes_written > max_file_size_bytes:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File too large. Maximum size is {settings.MAX_UPLOAD_FILE_SIZE_MB}MB.",
+                    )
+                output_handle.write(chunk)
+    except HTTPException:
+        if file_path.exists():
+            file_path.unlink()
+        raise
+    finally:
+        await file.close()
 
     # Page count is resolved during worker-side Graphify processing.
     page_count = 1
@@ -87,6 +103,8 @@ async def upload_pdf(file: UploadFile = File(...)):
                 "neo4j_password": settings.NEO4J_PASSWORD,
             },
             task_id=task_id,
+            queue="pdf_processing",
+            routing_key="pdf_processing",
         )
     except Exception as exc:
         if file_path.exists():
@@ -179,6 +197,8 @@ async def get_pdf_status(pdf_id: str):
             if task_result.state == "SUCCESS" and isinstance(task_result.result, dict):
                 response["graph_id"] = task_result.result.get("graph_id")
                 response["task_info"] = task_result.result
+            elif task_result.state == "FAILURE" and task_result.result is not None:
+                response["task_error"] = str(task_result.result)
             elif task_result.info:
                 response["task_info"] = task_result.info
         except Exception as exc:

@@ -43,6 +43,8 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [completedGraphId, setCompletedGraphId] = useState<string | null>(null);
+  const [completedTaskId, setCompletedTaskId] = useState<string | null>(null);
   const [progressDetails, setProgressDetails] = useState<TaskProgressDetails>({});
   const [pdfId, setPdfId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -75,16 +77,22 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
       return;
     }
 
+    const resolvedGraphId = graphId || activeTaskId;
+    window.localStorage.setItem('latestGraphId', resolvedGraphId);
+    window.localStorage.setItem('latestTaskId', activeTaskId);
+
     completedTaskRef.current = activeTaskId;
     setProgress(100);
     setMessage('处理完成！');
     setErrorMessage(null);
+    setCompletedTaskId(activeTaskId);
+    setCompletedGraphId(resolvedGraphId);
     setProgressDetails({
       stage: 'completed',
       stageLabel: '处理完成'
     });
     setUploading(false);
-    onUploadComplete?.(activeTaskId, graphId || activeTaskId);
+    onUploadComplete?.(activeTaskId, resolvedGraphId);
   };
 
   const handleTaskFailed = (error: string) => {
@@ -106,6 +114,8 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
     setProgress(0);
     setPdfId(null);
     setTaskId(null);
+    setCompletedGraphId(null);
+    setCompletedTaskId(null);
     completedTaskRef.current = null;
     setMessage('正在上传...');
     setProgressDetails({
@@ -195,6 +205,8 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
         }
       } catch (error) {
         console.error('Failed to poll PDF status:', error);
+        const message = error instanceof Error ? error.message : '无法获取任务状态';
+        handleTaskFailed(`状态查询失败：${message}`);
       }
     };
 
@@ -330,6 +342,32 @@ export function UploadCard({ onUploadComplete }: UploadCardProps) {
           <div>{errorMessage}</div>
           {progress > 0 && <div>失败前进度：{progress}%</div>}
           {taskId && <div>任务 ID：{taskId}</div>}
+        </div>
+      )}
+
+      {!uploading && !errorMessage && completedGraphId && (
+        <div style={{
+          marginTop: '1rem',
+          padding: '0.75rem 1rem',
+          borderRadius: 'var(--btn-radius)',
+          backgroundColor: '#ECF8F0',
+          border: '1px solid #B7DEC4',
+          color: '#1D5E35',
+          fontSize: '0.875rem',
+          lineHeight: 1.5,
+          fontFamily: 'Inter, sans-serif'
+        }}>
+          <strong>解析完成</strong>
+          <div>graphId: {completedGraphId}</div>
+          {completedTaskId && <div>taskId: {completedTaskId}</div>}
+          <div style={{ marginTop: '0.5rem' }}>
+            <a
+              href={`/tutor?graphId=${encodeURIComponent(completedGraphId)}`}
+              style={{ color: '#1D5E35', textDecoration: 'underline', fontWeight: 600 }}
+            >
+              进入导师页面并自动带入该图谱
+            </a>
+          </div>
         </div>
       )}
     </div>

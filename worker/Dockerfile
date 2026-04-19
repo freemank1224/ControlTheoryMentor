@@ -55,4 +55,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD celery -A worker.celery_app inspect ping || exit 1
 
 # Run Celery worker
-CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--pool=solo"]
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info", "--pool=solo", "-Q", "pdf_processing,celery"]
