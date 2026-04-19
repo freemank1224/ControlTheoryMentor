@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+from urllib.error import URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 import uuid
 from typing import Any, Callable, Protocol
 
@@ -13,7 +17,7 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from app.db.redis import close_redis_client, get_redis_client
-from app.schemas.content import ContentArtifact, ContentArtifactStatus
+from app.schemas.content import ContentArtifact, ContentArtifactStatus, ContentGenerationParams
 from app.schemas.tutor import ContentArtifactType, ContentRequestResponseMode, TeachingContentRequest
 
 
@@ -102,9 +106,18 @@ class RedisContentStore:
 class ContentService:
     """Generate, cache, and retrieve content artifacts."""
 
-    def __init__(self, store: ContentStore, backend_name: str) -> None:
+    def __init__(
+        self,
+        store: ContentStore,
+        backend_name: str,
+        *,
+        image_fetcher: Callable[[str, int], tuple[str, bytes]] | None = None,
+        image_real_enabled: bool = True,
+    ) -> None:
         self.store = store
         self.backend_name = backend_name
+        self.image_fetcher = image_fetcher or self._fetch_real_image
+        self.image_real_enabled = image_real_enabled
 
     def generate_content(
         self,
@@ -112,14 +125,21 @@ class ContentService:
         *,
         force_regenerate: bool = False,
         interactive_mode: str | None = None,
+        generation_params: ContentGenerationParams | None = None,
     ) -> tuple[ContentArtifact, bool]:
-        cache_key = self.build_cache_key(request)
+        params = generation_params or ContentGenerationParams()
+        cache_key = self.build_cache_key(request, params)
         if not force_regenerate:
             cached = self.store.get_by_cache_key(cache_key)
             if cached is not None:
                 return ContentArtifact.model_validate(cached), True
 
-        artifact = self._build_artifact(request, cache_key=cache_key, interactive_mode=interactive_mode)
+        artifact = self._build_artifact(
+            request,
+            cache_key=cache_key,
+            interactive_mode=interactive_mode,
+            generation_params=params,
+        )
         self.store.save(artifact.model_dump(mode="json"))
         return artifact, False
 
@@ -130,8 +150,12 @@ class ContentService:
         return ContentArtifact.model_validate(payload)
 
     @staticmethod
-    def build_cache_key(request: TeachingContentRequest) -> str:
-        fingerprint = json.dumps(request.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
+    def build_cache_key(request: TeachingContentRequest, generation_params: ContentGenerationParams) -> str:
+        payload = {
+            "request": request.model_dump(mode="json"),
+            "generationParams": generation_params.model_dump(mode="json"),
+        }
+        fingerprint = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
 
     def _build_artifact(
@@ -140,16 +164,40 @@ class ContentService:
         *,
         cache_key: str,
         interactive_mode: str | None,
+        generation_params: ContentGenerationParams,
     ) -> ContentArtifact:
         now = datetime.now(timezone.utc).isoformat()
         artifact_id = f"content-{uuid.uuid4()}"
         requested_types = request.targetContentTypes or [ContentArtifactType.MARKDOWN]
+        render_hint = request.renderHint
 
-        markdown = self._generate_markdown(request) if ContentArtifactType.MARKDOWN in requested_types else None
+        markdown = self._generate_markdown(request, generation_params) if ContentArtifactType.MARKDOWN in requested_types else None
         mermaid = self._generate_mermaid(request) if ContentArtifactType.MERMAID in requested_types else None
         latex = self._generate_latex(request) if ContentArtifactType.LATEX in requested_types else None
+        image = None
+        comic = None
+        animation = None
+        image_generation_meta: dict[str, Any] = {"requested": False}
+
+        if ContentArtifactType.IMAGE in requested_types:
+            image_generation_meta["requested"] = True
+            image = self._generate_image_payload(request, generation_params)
+            image_generation_meta["mode"] = image.get("source")
+            if image.get("source") == "fallback":
+                image_generation_meta["fallbackReason"] = image.get("fallbackReason")
+                if markdown is None:
+                    markdown = self._generate_markdown(request, generation_params)
+                if render_hint == ContentArtifactType.IMAGE:
+                    render_hint = ContentArtifactType.MARKDOWN
+
+        if ContentArtifactType.COMIC in requested_types:
+            comic = self._generate_comic_payload(request, generation_params, image)
+
+        if ContentArtifactType.ANIMATION in requested_types:
+            animation = self._generate_animation_payload(request, generation_params)
+
         interactive = (
-            self._generate_interactive_payload(request, interactive_mode)
+            self._generate_interactive_payload(request, interactive_mode, generation_params)
             if ContentArtifactType.INTERACTIVE in requested_types
             else None
         )
@@ -157,11 +205,14 @@ class ContentService:
         return ContentArtifact(
             id=artifact_id,
             status=ContentArtifactStatus.READY,
-            renderHint=request.renderHint,
+            renderHint=render_hint,
             targetContentTypes=requested_types,
             markdown=markdown,
             mermaid=mermaid,
             latex=latex,
+            image=image,
+            comic=comic,
+            animation=animation,
             interactive=interactive,
             source=request,
             cacheKey=cache_key,
@@ -170,12 +221,14 @@ class ContentService:
             metadata={
                 "generator": "template-v1",
                 "responseMode": request.responseMode,
+                "generationParams": generation_params.model_dump(mode="json"),
+                "imageGeneration": image_generation_meta,
                 "store": self.backend_name,
             },
         )
 
     @staticmethod
-    def _generate_markdown(request: TeachingContentRequest) -> str:
+    def _generate_markdown(request: TeachingContentRequest, generation_params: ContentGenerationParams) -> str:
         lines = [
             f"## {request.stepTitle}",
             "",
@@ -184,6 +237,9 @@ class ContentService:
             f"- Session Mode: {request.sessionMode.value}",
             f"- Learner Level: {request.learnerLevel}",
             f"- Stage: {request.stage.value}",
+            f"- Style: {generation_params.style}",
+            f"- Detail: {generation_params.detail}",
+            f"- Pace: {generation_params.pace}",
         ]
         if request.primaryConceptId:
             lines.append(f"- Primary Concept: {request.primaryConceptId}")
@@ -234,13 +290,144 @@ class ContentService:
         return r"e(t)=r(t)-y(t)"
 
     @staticmethod
-    def _generate_interactive_payload(request: TeachingContentRequest, interactive_mode: str | None) -> dict[str, Any]:
+    def _generate_interactive_payload(
+        request: TeachingContentRequest,
+        interactive_mode: str | None,
+        generation_params: ContentGenerationParams,
+    ) -> dict[str, Any]:
         return {
             "mode": interactive_mode or "guided",
             "status": "placeholder",
             "prompt": f"围绕 {request.stepTitle} 进行交互式练习。",
             "expectedResponse": "short-text",
+            "params": generation_params.model_dump(mode="json"),
         }
+
+    def _generate_image_payload(
+        self,
+        request: TeachingContentRequest,
+        generation_params: ContentGenerationParams,
+    ) -> dict[str, Any]:
+        prompt = generation_params.imagePrompt or self._build_image_prompt(request, generation_params)
+        timeout_ms = generation_params.imageTimeoutMs
+
+        if not self.image_real_enabled:
+            return self._fallback_image_payload(prompt, "image_provider_disabled")
+
+        try:
+            mime_type, image_bytes = self.image_fetcher(prompt, timeout_ms)
+            data_url = self._to_data_url(mime_type, image_bytes)
+            return {
+                "source": "real",
+                "status": "ready",
+                "mimeType": mime_type,
+                "dataUrl": data_url,
+                "alt": f"{request.stepTitle} image",
+                "prompt": prompt,
+            }
+        except TimeoutError:
+            return self._fallback_image_payload(prompt, "image_generation_timeout")
+        except Exception as exc:
+            return self._fallback_image_payload(prompt, f"image_generation_failed:{type(exc).__name__}")
+
+    @staticmethod
+    def _build_image_prompt(request: TeachingContentRequest, generation_params: ContentGenerationParams) -> str:
+        return (
+            f"{request.stepTitle}. {request.objective}. "
+            f"style={generation_params.style}; detail={generation_params.detail}; pace={generation_params.pace}; "
+            f"concept={request.primaryConceptId or 'control-theory'}"
+        )
+
+    @staticmethod
+    def _to_data_url(mime_type: str, payload: bytes) -> str:
+        encoded = base64.b64encode(payload).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+    @staticmethod
+    def _fallback_image_payload(prompt: str, reason: str) -> dict[str, Any]:
+        svg = (
+            "<svg xmlns='http://www.w3.org/2000/svg' width='720' height='405'>"
+            "<rect width='100%' height='100%' fill='#e8eef5'/>"
+            "<rect x='24' y='24' width='672' height='357' fill='#ffffff' stroke='#9fb2c7' stroke-width='2'/>"
+            "<text x='40' y='72' font-size='28' fill='#274c77'>Image fallback</text>"
+            f"<text x='40' y='118' font-size='16' fill='#335c81'>{reason}</text>"
+            f"<text x='40' y='160' font-size='14' fill='#4b6f8f'>{prompt[:110]}</text>"
+            "</svg>"
+        )
+        data_url = "data:image/svg+xml;utf8," + quote(svg)
+        return {
+            "source": "fallback",
+            "status": "fallback",
+            "mimeType": "image/svg+xml",
+            "dataUrl": data_url,
+            "alt": "Image fallback",
+            "prompt": prompt,
+            "fallbackReason": reason,
+        }
+
+    @staticmethod
+    def _generate_comic_payload(
+        request: TeachingContentRequest,
+        generation_params: ContentGenerationParams,
+        image_payload: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        return {
+            "status": "ready",
+            "source": "placeholder",
+            "style": generation_params.style,
+            "panels": [
+                {
+                    "id": "panel-1",
+                    "caption": f"问题设定: {request.question}",
+                    "visual": image_payload.get("dataUrl") if image_payload else None,
+                },
+                {
+                    "id": "panel-2",
+                    "caption": f"核心目标: {request.objective}",
+                    "visual": None,
+                },
+            ],
+        }
+
+    @staticmethod
+    def _generate_animation_payload(
+        request: TeachingContentRequest,
+        generation_params: ContentGenerationParams,
+    ) -> dict[str, Any]:
+        return {
+            "status": "placeholder",
+            "source": "placeholder",
+            "format": "timeline-v1",
+            "pace": generation_params.pace,
+            "keyframes": [
+                {"t": 0, "label": "setup", "text": request.stepTitle},
+                {"t": 1, "label": "focus", "text": request.objective},
+                {"t": 2, "label": "prompt", "text": request.question},
+            ],
+        }
+
+    @staticmethod
+    def _fetch_real_image(prompt: str, timeout_ms: int) -> tuple[str, bytes]:
+        timeout_seconds = max(timeout_ms / 1000.0, 0.2)
+        encoded_prompt = quote(prompt, safe="")
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=768&height=432&nologo=true"
+        request = Request(url, headers={"User-Agent": "ControlTheoryMentor/1.0"}, method="GET")
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                payload = response.read()
+                content_type = response.headers.get("Content-Type", "image/jpeg")
+        except URLError as exc:
+            reason = str(getattr(exc, "reason", exc)).lower()
+            if "timed out" in reason:
+                raise TimeoutError("image generation timed out") from exc
+            raise
+
+        if not payload:
+            raise RuntimeError("empty image payload")
+        mime_type = content_type.split(";")[0].strip() or "image/jpeg"
+        if not mime_type.startswith("image/"):
+            raise RuntimeError("unexpected image mime type")
+        return mime_type, payload
 
 
 class FailoverContentService(ContentService):
@@ -267,6 +454,7 @@ class FailoverContentService(ContentService):
         *,
         force_regenerate: bool = False,
         interactive_mode: str | None = None,
+        generation_params: ContentGenerationParams | None = None,
     ) -> tuple[ContentArtifact, bool]:
         return self._run_with_failover(
             lambda: ContentService.generate_content(
@@ -274,6 +462,7 @@ class FailoverContentService(ContentService):
                 request,
                 force_regenerate=force_regenerate,
                 interactive_mode=interactive_mode,
+                generation_params=generation_params,
             )
         )
 

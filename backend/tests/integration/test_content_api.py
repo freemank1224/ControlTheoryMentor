@@ -21,9 +21,16 @@ def build_request_payload() -> dict:
             "conceptIds": ["concept-pid", "concept-feedback"],
             "highlightedNodeIds": ["concept-pid"],
             "evidencePassageIds": ["chunk-pid-1"],
-            "targetContentTypes": ["markdown", "mermaid", "latex"],
+            "targetContentTypes": ["markdown", "mermaid", "latex", "image", "comic", "animation"],
             "renderHint": "markdown",
-        }
+        },
+        "generationParams": {
+            "style": "blueprint",
+            "detail": "high",
+            "pace": "normal",
+            "attempt": 1,
+            "imageTimeoutMs": 1500,
+        },
     }
 
 
@@ -40,9 +47,13 @@ class TestContentAPI:
     def test_content_generate_and_fetch_flow(self):
         from app.main import app
 
+        def fake_image_fetcher(prompt: str, timeout_ms: int):
+            return "image/png", b"\x89PNG\r\n\x1a\n"
+
         content_service = ContentService(
             store=InMemoryContentStore(artifacts={}, cache_index={}),
             backend_name="memory-test",
+            image_fetcher=fake_image_fetcher,
         )
         app.dependency_overrides[get_content_service] = lambda: content_service
         try:
@@ -55,6 +66,9 @@ class TestContentAPI:
                 assert artifact["markdown"]
                 assert artifact["mermaid"]
                 assert artifact["latex"]
+                assert artifact["image"] is not None
+                assert artifact["comic"] is not None
+                assert artifact["animation"] is not None
 
                 artifact_id = artifact["id"]
                 fetched = client.get(f"/api/content/{artifact_id}")
@@ -72,6 +86,33 @@ class TestContentAPI:
                 cached = client.post("/api/content/generate", json=build_request_payload())
                 assert cached.status_code == 200
                 assert cached.json()["cacheHit"] is True
+        finally:
+            app.dependency_overrides.clear()
+
+    def test_content_generate_degrades_when_image_fails(self):
+        from app.main import app
+
+        def failing_image_fetcher(prompt: str, timeout_ms: int):
+            raise TimeoutError("simulated timeout")
+
+        content_service = ContentService(
+            store=InMemoryContentStore(artifacts={}, cache_index={}),
+            backend_name="memory-test",
+            image_fetcher=failing_image_fetcher,
+        )
+        app.dependency_overrides[get_content_service] = lambda: content_service
+        try:
+            with TestClient(app) as client:
+                payload = build_request_payload()
+                payload["contentRequest"]["targetContentTypes"] = ["image"]
+                payload["contentRequest"]["renderHint"] = "image"
+                generated = client.post("/api/content/generate", json=payload)
+
+                assert generated.status_code == 200
+                artifact = generated.json()["artifact"]
+                assert artifact["image"]["source"] == "fallback"
+                assert artifact["renderHint"] == "markdown"
+                assert artifact["markdown"] is not None
         finally:
             app.dependency_overrides.clear()
 

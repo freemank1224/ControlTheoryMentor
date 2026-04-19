@@ -6,6 +6,7 @@ import { useKnowledgeGraph } from '../../hooks/useKnowledgeGraph';
 import { ContentRenderer } from '../content/ContentRenderer';
 import { KnowledgeGraph } from '../graph/KnowledgeGraph';
 import type {
+  ContentArtifact,
   CourseType,
   CourseTypeStrategy,
   FeedbackDifficulty,
@@ -90,6 +91,15 @@ export function TutorWorkspace() {
   const [feedbackRating, setFeedbackRating] = useState(4);
   const [feedbackDifficulty, setFeedbackDifficulty] = useState<FeedbackDifficulty>('appropriate');
   const [feedbackComment, setFeedbackComment] = useState('');
+  const [generationStyle, setGenerationStyle] = useState('instructional');
+  const [generationDetail, setGenerationDetail] = useState('balanced');
+  const [generationPace, setGenerationPace] = useState('normal');
+  const [generationAttempt, setGenerationAttempt] = useState(1);
+  const [includeImage, setIncludeImage] = useState(true);
+  const [includeComic, setIncludeComic] = useState(false);
+  const [includeAnimation, setIncludeAnimation] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<string | null>(null);
+  const [overrideArtifact, setOverrideArtifact] = useState<ContentArtifact | null>(null);
   const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
   const [latestTrackedStepKey, setLatestTrackedStepKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -103,6 +113,7 @@ export function TutorWorkspace() {
     error: contentError,
     refresh: refreshContent,
   } = useContentArtifact(contentId);
+  const displayedArtifact = overrideArtifact ?? artifact;
 
   const graphIdForView = currentGraphId(session, graphId);
   const normalizedLearnerId = normalizeLearnerId(learnerId);
@@ -195,6 +206,8 @@ export function TutorWorkspace() {
       setError(null);
       const result = await apiClient.nextTutorSessionStep(session.sessionId);
       setSession(result);
+      setOverrideArtifact(null);
+      setGenerationStatus(null);
       setResponseText('');
       await refreshLearningProgress(result);
     } catch (err) {
@@ -213,6 +226,8 @@ export function TutorWorkspace() {
       setError(null);
       const result = await apiClient.backTutorSessionStep(session.sessionId);
       setSession(result);
+      setOverrideArtifact(null);
+      setGenerationStatus(null);
       setResponseText('');
       await refreshLearningProgress(result);
     } catch (err) {
@@ -231,6 +246,8 @@ export function TutorWorkspace() {
       setError(null);
       const result = await apiClient.jumpTutorSessionStep(session.sessionId, { stepId: step.id });
       setSession(result);
+      setOverrideArtifact(null);
+      setGenerationStatus(null);
       setResponseText('');
       await refreshLearningProgress(result);
     } catch (err) {
@@ -292,6 +309,84 @@ export function TutorWorkspace() {
       setLoading(false);
     }
   };
+
+  const applyGenerationParameters = async () => {
+    if (!activeStep?.content?.contentRequest) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      setGenerationStatus(null);
+
+      const requestedTypes = new Set(activeStep.content.contentRequest.targetContentTypes);
+      if (includeImage) {
+        requestedTypes.add('image');
+      }
+      if (includeComic) {
+        requestedTypes.add('comic');
+      }
+      if (includeAnimation) {
+        requestedTypes.add('animation');
+      }
+
+      const renderHint = includeImage ? 'image' : activeStep.content.contentRequest.renderHint;
+      const generated = await apiClient.generateContent({
+        contentRequest: {
+          ...activeStep.content.contentRequest,
+          targetContentTypes: Array.from(requestedTypes),
+          renderHint,
+        },
+        forceRegenerate: true,
+        generationParams: {
+          style: generationStyle,
+          detail: generationDetail,
+          pace: generationPace,
+          attempt: generationAttempt,
+          imageTimeoutMs: 1500,
+        },
+      });
+
+      setOverrideArtifact(generated.artifact);
+      const imageMeta = (generated.artifact.image ?? null) as Record<string, unknown> | null;
+      const imageMode = imageMeta && typeof imageMeta.source === 'string' ? imageMeta.source : 'n/a';
+      setGenerationStatus(`参数已应用: style=${generationStyle}, detail=${generationDetail}, pace=${generationPace}, image=${imageMode}`);
+
+      if (session && normalizedLearnerId) {
+        const conceptId = activeStep.relatedTopics?.[0];
+        const tracking = await apiClient.trackLearningEvent({
+          learnerId: normalizedLearnerId,
+          graphId: graphIdForView,
+          sessionId: session.sessionId,
+          stepId: activeStep.id,
+          conceptId,
+          eventType: 'parameter_adjusted',
+          metadata: {
+            source: 'tutor_workspace',
+            style: generationStyle,
+            detail: generationDetail,
+            pace: generationPace,
+            attempt: generationAttempt,
+            includeImage,
+            includeComic,
+            includeAnimation,
+            imageMode,
+          },
+        });
+        setLearningProgress(tracking.progress);
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setOverrideArtifact(null);
+    setGenerationStatus(null);
+  }, [contentId]);
 
   useEffect(() => {
     if (!session || !activeStep || !normalizedLearnerId) {
@@ -436,7 +531,7 @@ export function TutorWorkspace() {
           </div>
           <div className="tutor-page__panel-body">
             <ContentRenderer
-              artifact={artifact}
+              artifact={displayedArtifact}
               loading={contentLoading}
               error={contentError?.message ?? null}
               fallbackMarkdown={activeStep?.content?.markdown}
@@ -467,6 +562,92 @@ export function TutorWorkspace() {
               >
                 刷新内容
               </button>
+            </div>
+
+            <div className="tutor-page__response">
+              <div className="tutor-page__response-meta">
+                <label htmlFor="generation-style">style:</label>
+                <select
+                  id="generation-style"
+                  className="tutor-page__select tutor-page__select--compact"
+                  value={generationStyle}
+                  onChange={(event) => setGenerationStyle(event.target.value)}
+                >
+                  <option value="instructional">instructional</option>
+                  <option value="blueprint">blueprint</option>
+                  <option value="comic">comic</option>
+                  <option value="minimal">minimal</option>
+                </select>
+                <label htmlFor="generation-detail">detail:</label>
+                <select
+                  id="generation-detail"
+                  className="tutor-page__select tutor-page__select--compact"
+                  value={generationDetail}
+                  onChange={(event) => setGenerationDetail(event.target.value)}
+                >
+                  <option value="low">low</option>
+                  <option value="balanced">balanced</option>
+                  <option value="high">high</option>
+                </select>
+                <label htmlFor="generation-pace">pace:</label>
+                <select
+                  id="generation-pace"
+                  className="tutor-page__select tutor-page__select--compact"
+                  value={generationPace}
+                  onChange={(event) => setGenerationPace(event.target.value)}
+                >
+                  <option value="fast">fast</option>
+                  <option value="normal">normal</option>
+                  <option value="deep">deep</option>
+                </select>
+                <label htmlFor="generation-attempt">attempt:</label>
+                <input
+                  id="generation-attempt"
+                  className="tutor-page__input tutor-page__input--compact"
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={generationAttempt}
+                  onChange={(event) => setGenerationAttempt(Number(event.target.value) || 1)}
+                />
+              </div>
+
+              <div className="tutor-page__response-meta">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={includeImage}
+                    onChange={(event) => setIncludeImage(event.target.checked)}
+                  />
+                  image
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={includeComic}
+                    onChange={(event) => setIncludeComic(event.target.checked)}
+                  />
+                  comic
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={includeAnimation}
+                    onChange={(event) => setIncludeAnimation(event.target.checked)}
+                  />
+                  animation
+                </label>
+                <button
+                  className="tutor-page__button tutor-page__button--ghost"
+                  type="button"
+                  disabled={loading || !activeStep?.content?.contentRequest}
+                  onClick={applyGenerationParameters}
+                >
+                  应用参数并重生成
+                </button>
+              </div>
+
+              {generationStatus && <div className="tutor-page__status">{generationStatus}</div>}
             </div>
 
             {session?.needsUserResponse && (

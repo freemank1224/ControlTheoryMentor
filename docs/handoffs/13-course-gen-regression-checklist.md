@@ -49,12 +49,26 @@
   - 旧会话回填: tests/unit/test_tutor_service_phase2_planner.py
   - next/back/jump/respond 不重规划: tests/integration/test_tutor_api.py::TestTutorSessionAPI::test_list_sessions_back_jump_and_respond_flow
 
-## Phase 3: 多模态与参数交互（待执行）
+## Phase 3: 多模态与参数交互（已完成）
 
-- [ ] image/comic/animation 载荷协议回归
-- [ ] 生图超时降级链路验证
-- [ ] 参数交互组件端到端测试
-- [ ] learning 新事件聚合回归
+- [x] image/comic/animation 载荷协议回归
+- [x] 生图超时降级链路验证
+- [x] 参数交互组件端到端测试
+- [x] learning 新事件聚合回归
+
+### Phase 3 回归证据
+
+- backend multimodal + fallback:
+  - `c:/Users/Dyson/Documents/ControlTheoryMentor/.venv/Scripts/python.exe -m pytest tests/unit/test_content_schema.py tests/unit/test_content_service.py tests/integration/test_content_api.py -q`
+  - 结果: `12 passed`
+  - 覆盖点: image/comic/animation 载荷、image timeout/failure fallback to markdown
+- frontend parameter interaction E2E:
+  - `npm run test:e2e -- tests/e2e/tutor-learning.spec.ts`
+  - 结果: `1 passed`
+  - 覆盖点: 参数交互触发重生成 + image fallback 场景 + learning `parameter_adjusted` 事件回流
+- frontend renderer smoke:
+  - `npm run test -- src/components/content/ContentRenderer.test.tsx --run`
+  - 结果: `2 passed`
 
 ## Phase 4: 灰度与硬化（待执行）
 
@@ -69,4 +83,4 @@
 - [x] 本回归清单已更新
 - [x] 回退策略文档已更新
 
-结论：Phase 2 三件套齐备，可进入 Phase 3。
+结论：Phase 3 三件套齐备，可进入 Phase 4。

@@ -67,6 +67,9 @@ class ContentArtifactType(str, Enum):
     MARKDOWN = "markdown"
     MERMAID = "mermaid"
     LATEX = "latex"
+    IMAGE = "image"
+    COMIC = "comic"
+    ANIMATION = "animation"
     INTERACTIVE = "interactive"
 
 

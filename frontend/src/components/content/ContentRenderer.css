@@ -92,6 +92,35 @@
   margin-top: 0.5rem;
 }
 
+.content-renderer__image,
+.content-renderer__comic-image {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  border-radius: 10px;
+  border: 1px solid var(--border-cream);
+  margin-top: 0.6rem;
+}
+
+.content-renderer__meta-inline {
+  margin-top: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+}
+
+.content-renderer__comic-panel {
+  border: 1px dashed var(--border-warm);
+  border-radius: 8px;
+  padding: 0.7rem;
+  margin-top: 0.7rem;
+}
+
+.content-renderer__comic-index {
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  margin-bottom: 0.25rem;
+}
+
 .content-renderer__meta {
   margin-top: 0.9rem;
   font-size: 0.82rem;

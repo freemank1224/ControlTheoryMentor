@@ -1,7 +1,7 @@
 # Phase 03 Handoff: 内容生成与渲染
 
 **阶段代号**: P3
-**阶段状态**: ✅ 核心闭环已完成（可交接 P4）
+**阶段状态**: ✅ 已完成（多模态 + 参数交互 + learning 事件回流）
 **上游输入**: P2 输出的 session schema、content request shape、graph highlight metadata
 **下游消费者**: P4 学习闭环与硬化
 
@@ -13,8 +13,9 @@
 
 1. 生成独立的 content artifact。
 2. 通过 API 读取内容对象。
-3. 在前端按类型渲染 markdown、mermaid、latex。
+3. 在前端按类型渲染 markdown、mermaid、latex、image、comic、animation。
 4. 让导师页真正消费 content artifact，而不是直接展示模板字符串。
+5. 支持 style/detail/pace/attempt 参数交互，并把 parameter 事件回流到 learning。
 
 ## 2. 开工前必读
 
@@ -56,7 +57,7 @@ P3 启动前，必须确认 P2 已交付：
 
 1. 学习进度建模
 2. personalization based on history
-3. animation / comic 的真实生成模型接入
+3. animation 的真实生成模型接入（当前保留 placeholder）
 
 ## 5. 交付清单
 
@@ -111,7 +112,7 @@ P4 开始前必须能从本阶段拿到：
 
 1. 如果 content artifact schema 不稳定，P4 的学习跟踪会失去依附对象。
 2. Mermaid / LaTeX 渲染失败必须有 fallback，不可阻塞整个 tutor 页面。
-3. interactive / animation / comic 可以先保留接口壳子，但必须明确状态为未完成。
+3. animation 可以保留接口壳子，但必须明确状态为 placeholder。
 
 ## 10. 阶段结束时必须更新的内容
 
@@ -121,9 +122,11 @@ P4 开始前必须能从本阶段拿到：
 - 核心对象: `ContentArtifact`
 	- 身份与状态: `id`, `status`, `cacheKey`
 	- 渲染协商: `renderHint`, `targetContentTypes`
-	- 载荷: `markdown`, `mermaid`, `latex`, `interactive`
+	- 载荷: `markdown`, `mermaid`, `latex`, `image`, `comic`, `animation`, `interactive`
 	- 上下文锚点: `source`（即 `TeachingContentRequest`）
 	- 可追踪元数据: `createdAt`, `updatedAt`, `metadata`
+- 新增参数模型: `ContentGenerationParams`
+	- `style`, `detail`, `pace`, `attempt`, `imagePrompt`, `imageTimeoutMs`
 - Tutor step 接线字段（`TeachingStep.content`）
 	- `contentArtifactId`
 	- `contentArtifactStatus`
@@ -149,6 +152,9 @@ P4 开始前必须能从本阶段拿到：
 	- Markdown: `react-markdown`
 	- Mermaid: `mermaid` 运行时渲染 SVG
 	- LaTeX: `react-katex` + `katex`
+	- Image: data-url 渲染 + fallback reason 展示
+	- Comic: storyboard panel 渲染
+	- Animation: placeholder keyframe 渲染
 	- interactive: 协议占位 payload 渲染
 - 新增 `frontend/src/hooks/useContentArtifact.ts`
 	- 按 `contentArtifactId` 拉取 artifact
@@ -157,20 +163,26 @@ P4 开始前必须能从本阶段拿到：
 	- `frontend/src/App.tsx` 路由接线
 	- 支持 session 启动、next/back/jump/respond
 	- 当前 step 按 `contentArtifactId` 拉取并渲染内容
+	- 新增参数交互区：style/detail/pace/attempt + image/comic/animation 开关
+	- 参数应用后触发 `parameter_adjusted` learning 事件回流
 
 ### 测试结果
 
 后端：
 
-- `cd backend; ../.venv/Scripts/python.exe -m pytest tests/unit/test_content_schema.py tests/unit/test_content_service.py tests/integration/test_content_api.py tests/integration/test_tutor_api.py tests/unit/test_tutor_schema.py -q`
-- 结果：`39 passed, 1 skipped, 21 warnings`
+- `cd backend; ../.venv/Scripts/python.exe -m pytest tests/unit/test_content_schema.py tests/unit/test_content_service.py tests/integration/test_content_api.py -q`
+- 结果：`12 passed, 21 warnings`
+- 门禁覆盖：
+	- image/comic/animation 载荷协议
+	- image 失败/超时强制降级到 markdown
 
 前端：
 
-- `cd frontend; npm run build`
-- 结果：构建通过
 - `cd frontend; npm test -- --run src/components/content/ContentRenderer.test.tsx`
 - 结果：`1 passed, 2 tests`
+- `cd frontend; npm run test:e2e -- tests/e2e/tutor-learning.spec.ts`
+- 结果：`1 passed`
+- 门禁覆盖：参数交互组件跑通 + image fallback 可见 + learning parameter_adjusted 回流
 
 新增测试：
 
@@ -181,8 +193,8 @@ P4 开始前必须能从本阶段拿到：
 
 ### 遗留问题
 
-1. `ContentService` 当前仍是模板生成器（`template-v1`），未接入真实 LLM/worker 内容生成。
-2. `interactive` 仍是协议占位 payload，未实现动画/comic 真实生成。
+1. `ContentService` 生图使用外部 provider 直连 + timeout fallback；后续建议迁移到 worker 异步队列与重试策略。
+2. animation 仍为 placeholder payload，真实动画模型待下一阶段接入。
 3. Mermaid 依赖在前端引入较大 bundle，后续可按需做动态加载和分包优化。
 4. 现有 warnings 仍为仓库既有 Pydantic v2 class-based config deprecation，未在本阶段处理。
 
@@ -194,15 +206,15 @@ P4 开始前必须能从本阶段拿到：
 4. 多模态内容读取接口：`/mermaid`、`/latex` typed payload
 5. Tutor 页面交互模型：session 驱动 + current step artifact 渲染 + learner response 回写
 
-## 11. 下一 session 启动提示词
+## 11. Phase 4 启动词
 
 ```text
-请读取以下文档后继续 P3 阶段开发：
-1. docs/superpowers/plans/2026-04-18-ai-tutor-system-blueprint.md
-2. docs/superpowers/plans/2026-04-18-ai-tutor-system-phase-breakdown.md
-3. docs/handoffs/07-ai-tutor-phase-02-tutor-orchestration.md
-4. docs/handoffs/08-ai-tutor-phase-03-content-generation.md
+请先读取并确认以下三件套文档（Phase 3, 2026-04-19）：
+1) docs/handoffs/08-ai-tutor-phase-03-content-generation.md
+2) docs/handoffs/13-course-gen-regression-checklist.md
+3) docs/handoffs/13-course-gen-failure-and-rollback.md
 
-目标：完成内容生成与渲染闭环，只做 content artifact、content API、ContentRenderer 和 tutor page 接线，不进入 learning progress / personalization 模块。
-结束前必须更新 handoff 文档中的状态、测试结果、遗留问题和交接输出。
+然后启动 Phase 4：灰度与硬化。
+目标：在保持 course-v1 兼容的前提下，完成多模态参数链路的灰度开关、观测指标、性能压测与故障演练，确保 image fallback 与 parameter_adjusted 事件在高并发下稳定可用。
+门禁：legacy + course-v1 并行回归通过、关键接口性能门禁达标、回退演练通过，并更新 Phase 4 三件套。
 ```

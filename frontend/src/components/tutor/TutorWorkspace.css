@@ -47,6 +47,11 @@
   width: auto;
 }
 
+.tutor-page__input--compact {
+  width: 84px;
+  padding: 0.42rem 0.5rem;
+}
+
 .tutor-page__button {
   border: none;
   border-radius: 10px;
@@ -191,6 +196,13 @@
   gap: 0.5rem;
   font-size: 0.86rem;
   color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.tutor-page__response-meta label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .tutor-page__learning {

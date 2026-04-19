@@ -26,6 +26,7 @@ async def generate_content_artifact(
     artifact, cache_hit = content_service.generate_content(
         request.contentRequest,
         force_regenerate=request.forceRegenerate,
+        generation_params=request.generationParams,
     )
     return ContentGenerateResponse(artifact=artifact, cacheHit=cache_hit)
 
@@ -44,6 +45,7 @@ async def generate_interactive_content_artifact(
     artifact, cache_hit = content_service.generate_content(
         content_request,
         interactive_mode=request.interactionMode,
+        generation_params=request.generationParams,
     )
     return ContentGenerateResponse(artifact=artifact, cacheHit=cache_hit)
 

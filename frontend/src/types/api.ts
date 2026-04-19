@@ -124,7 +124,14 @@ export interface TutorAnalyzeResponse {
   } & Record<string, unknown>;
 }
 
-export type ContentArtifactType = 'markdown' | 'mermaid' | 'latex' | 'interactive';
+export type ContentArtifactType =
+  | 'markdown'
+  | 'mermaid'
+  | 'latex'
+  | 'image'
+  | 'comic'
+  | 'animation'
+  | 'interactive';
 
 export type ContentRequestResponseMode = 'passive' | 'interactive';
 
@@ -246,6 +253,9 @@ export interface ContentArtifact {
   markdown?: string | null;
   mermaid?: string | null;
   latex?: string | null;
+  image?: Record<string, unknown> | null;
+  comic?: Record<string, unknown> | null;
+  animation?: Record<string, unknown> | null;
   interactive?: Record<string, unknown> | null;
   source: TeachingContentRequest;
   cacheKey: string;
@@ -254,14 +264,25 @@ export interface ContentArtifact {
   metadata: Record<string, unknown>;
 }
 
+export interface ContentGenerationParams {
+  style?: string;
+  detail?: string;
+  pace?: string;
+  attempt?: number;
+  imagePrompt?: string;
+  imageTimeoutMs?: number;
+}
+
 export interface ContentGenerateRequest {
   contentRequest: TeachingContentRequest;
   forceRegenerate?: boolean;
+  generationParams?: ContentGenerationParams;
 }
 
 export interface ContentInteractiveRequest {
   contentRequest: TeachingContentRequest;
   interactionMode?: string;
+  generationParams?: ContentGenerationParams;
 }
 
 export interface ContentGenerateResponse {
@@ -283,6 +304,7 @@ export type LearningEventType =
   | 'step_completed'
   | 'step_response'
   | 'content_viewed'
+  | 'parameter_adjusted'
   | 'session_completed';
 
 export type FeedbackDifficulty = 'too_easy' | 'appropriate' | 'too_hard';

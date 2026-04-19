@@ -1,6 +1,6 @@
 # Course Generation Failure and Rollback Playbook
 
-- 文档版本: v1.1
+- 文档版本: v1.2
 - 更新时间: 2026-04-19
 
 ## 1. 目的
@@ -97,7 +97,44 @@
 2. `tests/unit/test_tutor_service_phase2_planner.py` 通过。
 3. `tests/integration/test_tutor_api.py` 通过（允许 Redis 恢复用例在本地 skip）。
 
-## 6. 责任与升级
+## 6. Phase 3 专项：多模态与参数交互
+
+### 6.1 失败信号
+
+1. `POST /api/content/generate` 在 image 请求下频繁超时或 5xx，且无 markdown 降级。
+2. `ContentArtifactType` 出现 image/comic/animation 后，前端渲染出现空白或崩溃。
+3. 参数交互（style/detail/pace/attempt）触发重生成后，learning 事件未回流（`parameter_adjusted` 缺失）。
+4. 同一 step 多次参数重生成导致 artifact 缓存错乱或 renderHint 不可用。
+
+### 6.2 快速止损
+
+1. 前端参数组件降级为只读，停止发送 `generationParams`。
+2. 强制 `targetContentTypes=['markdown']`，暂时下线 image/comic/animation tab。
+3. learning 事件链路异常时，保留 tutor 主链路，参数事件改为非阻塞 best-effort。
+
+### 6.3 回退策略
+
+#### 软回退（优先）
+
+1. 保留多模态 schema，但默认 renderHint 回落到 markdown。
+2. image 生成链路切换到 fallback-only 模式，避免外部生图依赖抖动影响主流程。
+3. 参数交互仅记录 UI 状态，不触发强制 regenerate。
+
+#### 硬回退（必要时）
+
+1. 回退 [backend/app/services/content_service.py](backend/app/services/content_service.py) 中 image/comic/animation 生成分支。
+2. 回退 [backend/app/schemas/content.py](backend/app/schemas/content.py) 的 generation params 与新增 payload 字段。
+3. 回退 [frontend/src/components/tutor/TutorWorkspace.tsx](frontend/src/components/tutor/TutorWorkspace.tsx) 参数交互组件。
+4. 回退 [frontend/src/components/content/ContentRenderer.tsx](frontend/src/components/content/ContentRenderer.tsx) 新增多模态渲染分支。
+
+### 6.4 最小恢复验证
+
+1. `tests/unit/test_content_schema.py` 通过。
+2. `tests/unit/test_content_service.py` 通过（重点验证 image fail to markdown fallback）。
+3. `tests/integration/test_content_api.py` 通过。
+4. `npm run test:e2e -- tests/e2e/tutor-learning.spec.ts` 通过。
+
+## 7. 责任与升级
 
 1. P0/P1 触发：立即停止进入下一阶段，先完成本阶段回退闭环。
 2. 未完成三件套更新：禁止标记阶段完成。

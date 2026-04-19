@@ -8,6 +8,32 @@ import type { ContentArtifact, ContentArtifactType } from '../../types/api';
 
 import './ContentRenderer.css';
 
+interface ImagePayload {
+  dataUrl?: string;
+  alt?: string;
+  source?: string;
+  status?: string;
+  fallbackReason?: string;
+}
+
+interface ComicPanel {
+  id?: string;
+  caption?: string;
+  visual?: string | null;
+}
+
+interface ComicPayload {
+  panels?: ComicPanel[];
+  style?: string;
+  status?: string;
+}
+
+interface AnimationPayload {
+  format?: string;
+  status?: string;
+  keyframes?: Array<{ t?: number; label?: string; text?: string }>;
+}
+
 interface ContentRendererProps {
   artifact: ContentArtifact | null;
   loading?: boolean;
@@ -24,6 +50,15 @@ function toLabel(type: ContentArtifactType): string {
   }
   if (type === 'latex') {
     return 'LaTeX';
+  }
+  if (type === 'image') {
+    return 'Image';
+  }
+  if (type === 'comic') {
+    return 'Comic';
+  }
+  if (type === 'animation') {
+    return 'Animation';
   }
   return 'Interactive';
 }
@@ -42,6 +77,15 @@ function availableTypes(artifact: ContentArtifact | null): ContentArtifactType[]
   }
   if (artifact.latex) {
     types.push('latex');
+  }
+  if (artifact.image) {
+    types.push('image');
+  }
+  if (artifact.comic) {
+    types.push('comic');
+  }
+  if (artifact.animation) {
+    types.push('animation');
   }
   if (artifact.interactive) {
     types.push('interactive');
@@ -136,6 +180,9 @@ export function ContentRenderer({ artifact, loading = false, error = null, fallb
   }
 
   const renderMarkdown = artifact.markdown || fallbackMarkdown || '';
+  const imagePayload = (artifact.image ?? null) as ImagePayload | null;
+  const comicPayload = (artifact.comic ?? null) as ComicPayload | null;
+  const animationPayload = (artifact.animation ?? null) as AnimationPayload | null;
 
   return (
     <div className="content-renderer">
@@ -172,6 +219,43 @@ export function ContentRenderer({ artifact, loading = false, error = null, fallb
         {activeType === 'latex' && artifact.latex && (
           <div className="content-renderer__code">
             <BlockMath math={artifact.latex} />
+          </div>
+        )}
+
+        {activeType === 'image' && imagePayload && (
+          <div className="content-renderer__interactive">
+            {imagePayload.dataUrl ? (
+              <img src={imagePayload.dataUrl} alt={imagePayload.alt || 'Generated image'} className="content-renderer__image" />
+            ) : (
+              <div className="content-renderer__status">当前图片不可用</div>
+            )}
+            <div className="content-renderer__meta-inline">
+              source: {imagePayload.source || '-'} | status: {imagePayload.status || '-'}
+            </div>
+            {imagePayload.fallbackReason && (
+              <div className="content-renderer__status">fallback: {imagePayload.fallbackReason}</div>
+            )}
+          </div>
+        )}
+
+        {activeType === 'comic' && comicPayload && (
+          <div className="content-renderer__interactive">
+            <strong>Comic Storyboard ({comicPayload.style || 'default'})</strong>
+            {(comicPayload.panels || []).map((panel, index) => (
+              <div key={panel.id || `panel-${index}`} className="content-renderer__comic-panel">
+                <div className="content-renderer__comic-index">Panel {index + 1}</div>
+                <div>{panel.caption || '-'}</div>
+                {panel.visual && <img src={panel.visual} alt={`Comic panel ${index + 1}`} className="content-renderer__comic-image" />}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeType === 'animation' && animationPayload && (
+          <div className="content-renderer__interactive">
+            <strong>Animation ({animationPayload.format || 'placeholder'})</strong>
+            <div className="content-renderer__meta-inline">status: {animationPayload.status || '-'}</div>
+            <pre className="content-renderer__code">{JSON.stringify(animationPayload.keyframes || [], null, 2)}</pre>
           </div>
         )}
 

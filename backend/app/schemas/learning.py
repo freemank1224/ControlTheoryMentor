@@ -16,6 +16,7 @@ class LearningEventType(str, Enum):
     STEP_COMPLETED = "step_completed"
     STEP_RESPONSE = "step_response"
     CONTENT_VIEWED = "content_viewed"
+    PARAMETER_ADJUSTED = "parameter_adjusted"
     SESSION_COMPLETED = "session_completed"
 
 

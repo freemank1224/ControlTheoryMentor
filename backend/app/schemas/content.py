@@ -18,6 +18,17 @@ class ContentArtifactStatus(str, Enum):
     FAILED = "failed"
 
 
+class ContentGenerationParams(BaseModel):
+    """Tunable generation parameters from UI/runtime controls."""
+
+    style: str = Field(default="instructional", min_length=1, description="Style hint such as blueprint or comic")
+    detail: str = Field(default="balanced", min_length=1, description="Detail level hint")
+    pace: str = Field(default="normal", min_length=1, description="Pacing hint for narrative/step granularity")
+    attempt: int = Field(default=1, ge=1, le=5, description="Nth generation attempt for retry loops")
+    imagePrompt: Optional[str] = Field(default=None, description="Optional image-specific prompt override")
+    imageTimeoutMs: int = Field(default=3500, ge=200, le=30000, description="Image generation timeout in milliseconds")
+
+
 class ContentArtifact(BaseModel):
     """Persisted content artifact that can be rendered repeatedly."""
 
@@ -34,6 +45,9 @@ class ContentArtifact(BaseModel):
     markdown: Optional[str] = Field(default=None, description="Markdown payload when available")
     mermaid: Optional[str] = Field(default=None, description="Mermaid payload when available")
     latex: Optional[str] = Field(default=None, description="LaTeX payload when available")
+    image: Optional[Dict[str, Any]] = Field(default=None, description="Image payload with data-url and fallback metadata")
+    comic: Optional[Dict[str, Any]] = Field(default=None, description="Comic storyboard payload")
+    animation: Optional[Dict[str, Any]] = Field(default=None, description="Animation payload (placeholder for now)")
     interactive: Optional[Dict[str, Any]] = Field(default=None, description="Interactive payload placeholder")
     source: TeachingContentRequest = Field(..., description="Original step-level content request")
     cacheKey: str = Field(..., description="Deterministic cache key for deduplication")
@@ -50,6 +64,10 @@ class ContentGenerateRequest(BaseModel):
         default=False,
         description="When true, bypass cache and generate a fresh artifact",
     )
+    generationParams: ContentGenerationParams = Field(
+        default_factory=ContentGenerationParams,
+        description="Optional generation parameter overrides from UI/runtime controls",
+    )
 
 
 class ContentInteractiveRequest(BaseModel):
@@ -57,6 +75,10 @@ class ContentInteractiveRequest(BaseModel):
 
     contentRequest: TeachingContentRequest = Field(..., description="Step-level generation contract from tutor session")
     interactionMode: str = Field(default="guided", min_length=1, description="Requested interactive mode placeholder")
+    generationParams: ContentGenerationParams = Field(
+        default_factory=ContentGenerationParams,
+        description="Optional generation parameter overrides from UI/runtime controls",
+    )
 
 
 class ContentGenerateResponse(BaseModel):

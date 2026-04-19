@@ -15,6 +15,7 @@ interface TeachingStepState {
     contentArtifactStatus: 'ready';
     graphHighlights: string[];
     relatedTopics: string[];
+    contentRequest: Record<string, unknown>;
   };
   relatedTopics: string[];
   requiresResponse: boolean;
@@ -68,6 +69,9 @@ interface LearningProgressState {
 interface ContentArtifactState {
   id: string;
   markdown: string;
+  image?: Record<string, unknown> | null;
+  comic?: Record<string, unknown> | null;
+  animation?: Record<string, unknown> | null;
 }
 
 function nowIso(): string {
@@ -102,6 +106,19 @@ function buildDefaultProgress(learnerId: string, graphId: string): LearningProgr
 
 function buildSteps(sessionId: string, weakConceptId?: string): TeachingStepState[] {
   const weakHint = weakConceptId ? ` 当前建议优先补练概念：${weakConceptId}。` : '';
+  const baseContentRequest = {
+    stage: 'concept',
+    graphId: 'graph-task-e2e',
+    sessionMode: 'interactive',
+    learnerLevel: 'intermediate',
+    responseMode: 'passive',
+    primaryConceptId: 'concept-pid',
+    conceptIds: ['concept-pid', 'concept-feedback'],
+    highlightedNodeIds: ['concept-pid'],
+    evidencePassageIds: ['chunk-pid-1'],
+    targetContentTypes: ['markdown'],
+    renderHint: 'markdown',
+  };
   return [
     {
       id: 'step-1',
@@ -114,6 +131,14 @@ function buildSteps(sessionId: string, weakConceptId?: string): TeachingStepStat
         contentArtifactStatus: 'ready',
         graphHighlights: ['concept-pid'],
         relatedTopics: ['concept-pid'],
+        contentRequest: {
+          ...baseContentRequest,
+          stage: 'intro',
+          stepId: 'step-1',
+          stepTitle: '建立问题背景: PID Controller',
+          objective: '明确问题背景',
+          question: 'How does PID reduce steady-state error?',
+        },
       },
       relatedTopics: ['concept-pid'],
       requiresResponse: false,
@@ -129,6 +154,14 @@ function buildSteps(sessionId: string, weakConceptId?: string): TeachingStepStat
         contentArtifactStatus: 'ready',
         graphHighlights: ['concept-pid'],
         relatedTopics: ['concept-pid'],
+        contentRequest: {
+          ...baseContentRequest,
+          responseMode: 'interactive',
+          stepId: 'step-2',
+          stepTitle: '拆解核心概念: PID Controller',
+          objective: '检查学员是否理解核心概念',
+          question: 'How does PID reduce steady-state error?',
+        },
       },
       relatedTopics: ['concept-pid'],
       requiresResponse: true,
@@ -144,6 +177,14 @@ function buildSteps(sessionId: string, weakConceptId?: string): TeachingStepStat
         contentArtifactStatus: 'ready',
         graphHighlights: ['concept-pid', 'concept-feedback'],
         relatedTopics: ['concept-feedback'],
+        contentRequest: {
+          ...baseContentRequest,
+          responseMode: 'interactive',
+          stepId: 'step-3',
+          stepTitle: '理解检查与迁移',
+          objective: '迁移到具体场景',
+          question: 'How does PID reduce steady-state error?',
+        },
       },
       relatedTopics: ['concept-feedback'],
       requiresResponse: true,
@@ -159,6 +200,14 @@ function buildSteps(sessionId: string, weakConceptId?: string): TeachingStepStat
         contentArtifactStatus: 'ready',
         graphHighlights: ['concept-pid'],
         relatedTopics: ['concept-pid'],
+        contentRequest: {
+          ...baseContentRequest,
+          stage: 'summary',
+          stepId: 'step-4',
+          stepTitle: '总结与下一步',
+          objective: '总结并安排复习',
+          question: 'How does PID reduce steady-state error?',
+        },
       },
       relatedTopics: ['concept-pid'],
       requiresResponse: false,
@@ -207,6 +256,9 @@ function buildArtifactPayload(artifact: ContentArtifactState) {
       markdown: artifact.markdown,
       mermaid: null,
       latex: null,
+      image: artifact.image ?? null,
+      comic: artifact.comic ?? null,
+      animation: artifact.animation ?? null,
       interactive: null,
       source: {
         stage: 'intro',
@@ -293,6 +345,90 @@ async function mockTutorLearningApis(page: Page) {
         return;
       }
       await json(route, 200, buildArtifactPayload(artifact));
+      return;
+    }
+
+    if (method === 'POST' && path === '/api/content/generate') {
+      const contentRequest = (body.contentRequest ?? {}) as Record<string, unknown>;
+      const generationParams = (body.generationParams ?? {}) as Record<string, unknown>;
+      const targetTypes = Array.isArray(contentRequest.targetContentTypes)
+        ? contentRequest.targetContentTypes.filter((item): item is string => typeof item === 'string')
+        : ['markdown'];
+      const attempt = typeof generationParams.attempt === 'number' ? generationParams.attempt : 1;
+      const style = typeof generationParams.style === 'string' ? generationParams.style : 'instructional';
+      const detail = typeof generationParams.detail === 'string' ? generationParams.detail : 'balanced';
+      const pace = typeof generationParams.pace === 'string' ? generationParams.pace : 'normal';
+      const artifactId = `generated-${Date.now()}`;
+
+      const shouldFallbackImage = targetTypes.includes('image') && attempt >= 2;
+      const imagePayload = targetTypes.includes('image')
+        ? shouldFallbackImage
+          ? {
+              source: 'fallback',
+              status: 'fallback',
+              mimeType: 'image/svg+xml',
+              dataUrl:
+                "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='360' height='200'><rect width='100%' height='100%' fill='%23f3f5f8'/><text x='20' y='60' fill='%23344'>fallback image</text></svg>",
+              fallbackReason: 'mock_timeout',
+            }
+          : {
+              source: 'real',
+              status: 'ready',
+              mimeType: 'image/svg+xml',
+              dataUrl:
+                "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='360' height='200'><rect width='100%' height='100%' fill='%23d7f2dc'/><text x='20' y='60' fill='%23164'>real image</text></svg>",
+            }
+        : null;
+
+      const artifact: ContentArtifactState = {
+        id: artifactId,
+        markdown: `参数生成内容 style=${style}; detail=${detail}; pace=${pace}`,
+        image: imagePayload,
+        comic: targetTypes.includes('comic')
+          ? {
+              status: 'ready',
+              panels: [{ id: 'panel-1', caption: 'mock comic panel' }],
+            }
+          : null,
+        animation: targetTypes.includes('animation')
+          ? {
+              status: 'placeholder',
+              keyframes: [{ t: 0, label: 'setup', text: 'mock animation' }],
+            }
+          : null,
+      };
+
+      artifacts.set(artifactId, artifact);
+
+      await json(route, 200, {
+        artifact: {
+          id: artifact.id,
+          status: 'ready',
+          renderHint: targetTypes.includes('image') ? 'image' : 'markdown',
+          targetContentTypes: targetTypes,
+          markdown: artifact.markdown,
+          mermaid: null,
+          latex: null,
+          image: artifact.image,
+          comic: artifact.comic,
+          animation: artifact.animation,
+          interactive: null,
+          source: {
+            ...(contentRequest as Record<string, unknown>),
+          },
+          cacheKey: `cache-${artifact.id}`,
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          metadata: {
+            generationParams,
+            imageGeneration: {
+              requested: targetTypes.includes('image'),
+              mode: shouldFallbackImage ? 'fallback' : 'real',
+            },
+          },
+        },
+        cacheHit: false,
+      });
       return;
     }
 
@@ -532,6 +668,11 @@ test.describe('Tutor Learning End-to-End', () => {
 
     await nextButton.click();
     await expect(page.getByText('当前步骤: 建立问题背景: PID Controller')).toBeVisible();
+
+    await page.locator('#generation-attempt').fill('2');
+    await page.getByRole('button', { name: '应用参数并重生成' }).click();
+    await expect(page.locator('.tutor-page__status').filter({ hasText: '参数已应用' }).first()).toContainText('image=fallback');
+    await expect(page.locator('.tutor-page__learning')).toContainText('event: 2');
 
     await nextButton.click();
     await expect(page.getByText('当前步骤: 拆解核心概念: PID Controller')).toBeVisible();

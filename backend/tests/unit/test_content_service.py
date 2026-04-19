@@ -1,5 +1,6 @@
 """Unit tests for content generation service."""
 
+from app.schemas.content import ContentGenerationParams
 from app.schemas.tutor import TeachingContentRequest
 from app.services.content_service import ContentService, InMemoryContentStore
 
@@ -73,3 +74,53 @@ class TestContentService:
         )
 
         assert service.get_artifact("content-missing") is None
+
+    def test_generate_content_covers_image_comic_animation_payloads(self):
+        def fake_image_fetcher(prompt: str, timeout_ms: int):
+            return "image/png", b"\x89PNG\r\n\x1a\n"
+
+        service = ContentService(
+            store=InMemoryContentStore(artifacts={}, cache_index={}),
+            backend_name="memory-test",
+            image_fetcher=fake_image_fetcher,
+        )
+
+        request = build_request(target_types=["markdown", "image", "comic", "animation"])
+        artifact, cache_hit = service.generate_content(request, force_regenerate=True)
+
+        assert cache_hit is False
+        assert artifact.image is not None
+        assert artifact.image["source"] == "real"
+        assert artifact.image["dataUrl"].startswith("data:image/png;base64,")
+        assert artifact.comic is not None
+        assert artifact.animation is not None
+
+    def test_image_generation_failure_degrades_to_fallback(self):
+        def failing_fetcher(prompt: str, timeout_ms: int):
+            raise TimeoutError("simulated timeout")
+
+        service = ContentService(
+            store=InMemoryContentStore(artifacts={}, cache_index={}),
+            backend_name="memory-test",
+            image_fetcher=failing_fetcher,
+        )
+
+        request = build_request(target_types=["image"])
+        request.renderHint = "image"
+        artifact, _ = service.generate_content(
+            request,
+            force_regenerate=True,
+            generation_params=ContentGenerationParams(
+                style="blueprint",
+                detail="high",
+                pace="fast",
+                attempt=3,
+            ),
+        )
+
+        assert artifact.image is not None
+        assert artifact.image["source"] == "fallback"
+        assert artifact.image["status"] == "fallback"
+        assert artifact.markdown is not None
+        assert artifact.renderHint.value == "markdown"
+        assert artifact.metadata["imageGeneration"]["mode"] == "fallback"
