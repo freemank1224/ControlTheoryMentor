@@ -1,6 +1,6 @@
 # Course Generation Failure and Rollback Playbook
 
-- 文档版本: v1.0
+- 文档版本: v1.1
 - 更新时间: 2026-04-19
 
 ## 1. 目的
@@ -61,7 +61,43 @@
    - `frontend/tests/integration/api.test.ts`
 4. 更新 handoff + regression checklist + rollback 三件套状态。
 
-## 5. 责任与升级
+## 5. Phase 2 专项：双轨规划引擎
+
+### 5.1 失败信号
+
+1. `POST /api/tutor/session/start` 生成的 `plan.steps` 非 4 步，或 track 与 `finalCourseType` 不一致。
+2. `plan.planFinalized` 缺失或为 `false`，导致状态机流转期间可能重复规划。
+3. `modalityPlan` / `checkpointSpec` 字段缺失，前端渲染和 checkpoint 评估契约不稳定。
+4. `next/back/jump/respond` 任一操作导致 plan 内容变化（非仅 runtime 状态变化）。
+5. 旧会话读取时缺省 `courseType` 触发 5xx 或返回结构不完整。
+
+### 5.2 快速止损
+
+1. 临时固定走 `knowledge_learning` builder，避免双轨分流异常扩大。
+2. 若新字段影响前端渲染，保留 `content.markdown` 主路径并忽略 `modalityPlan/checkpointSpec`。
+3. 暂停 checkpoint 严格评估，保留 `requiresResponse` 交互语义。
+
+### 5.3 回退策略
+
+#### 软回退（优先）
+
+1. 保留双轨入口，但强制 `planFinalized=true` 且禁用重规划逻辑变更。
+2. 将 `targetContentTypes` 临时压缩为 `['markdown']`，确保渲染路径单一稳定。
+3. 对旧会话继续启用回填逻辑：自动补齐 `courseType/planFinalized/modalityPlan`。
+
+#### 硬回退（必要时）
+
+1. 回退 [backend/app/services/tutor_service.py](backend/app/services/tutor_service.py) 到单 builder 版本。
+2. 回退 [backend/app/schemas/tutor.py](backend/app/schemas/tutor.py) 新增 `modalityPlan/checkpointSpec/planFinalized` 字段。
+3. 回退 Phase 2 新增测试：[backend/tests/unit/test_tutor_service_phase2_planner.py](backend/tests/unit/test_tutor_service_phase2_planner.py) 及相关集成断言。
+
+### 5.4 最小恢复验证
+
+1. `tests/unit/test_tutor_schema.py` 通过。
+2. `tests/unit/test_tutor_service_phase2_planner.py` 通过。
+3. `tests/integration/test_tutor_api.py` 通过（允许 Redis 恢复用例在本地 skip）。
+
+## 6. 责任与升级
 
 1. P0/P1 触发：立即停止进入下一阶段，先完成本阶段回退闭环。
 2. 未完成三件套更新：禁止标记阶段完成。

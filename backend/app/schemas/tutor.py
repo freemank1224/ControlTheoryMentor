@@ -264,6 +264,36 @@ class TeachingStepContent(BaseModel):
     )
 
 
+class ModalityPlan(BaseModel):
+    """Per-step modality strategy used by downstream renderers and generators."""
+
+    primary: ContentArtifactType = Field(..., description="Primary artifact type for the current step")
+    secondary: List[ContentArtifactType] = Field(
+        default_factory=list,
+        description="Optional secondary artifact types for richer delivery",
+    )
+    responseMode: ContentRequestResponseMode = Field(
+        default=ContentRequestResponseMode.PASSIVE,
+        description="Whether this step is passive or interactive from learner perspective",
+    )
+    interactionMode: str = Field(default="guided", description="Interaction style hint for UI/runtime")
+    rationale: str = Field(..., min_length=1, description="Why this modality mix was selected")
+
+
+class CheckpointSpec(BaseModel):
+    """Structured checkpoint contract for response-required teaching steps."""
+
+    checkpointId: str = Field(..., min_length=1, description="Stable checkpoint identifier")
+    kind: str = Field(..., min_length=1, description="Checkpoint type such as concept_check or transfer_check")
+    prompt: str = Field(..., min_length=1, description="Prompt that defines the checkpoint objective")
+    expectedEvidence: List[str] = Field(
+        default_factory=list,
+        description="Signals/rubric bullets expected from learner response",
+    )
+    passThreshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Passing threshold for checkpoint scoring")
+    retryHint: str = Field(default="restate key concept and retry", description="Hint shown when learner response is weak")
+
+
 class TeachingStep(BaseModel):
     """Single step inside a tutor session plan"""
     id: str = Field(..., description="Unique step identifier")
@@ -271,6 +301,20 @@ class TeachingStep(BaseModel):
     title: str = Field(..., min_length=1, description="Step title")
     objective: str = Field(..., min_length=1, description="Instructional objective")
     content: TeachingStepContent = Field(default_factory=TeachingStepContent, description="Structured rendering payload")
+    modalityPlan: ModalityPlan = Field(
+        default_factory=lambda: ModalityPlan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[],
+            responseMode=ContentRequestResponseMode.PASSIVE,
+            interactionMode="guided",
+            rationale="default_modality_plan",
+        ),
+        description="Per-step modality delivery plan",
+    )
+    checkpointSpec: Optional[CheckpointSpec] = Field(
+        default=None,
+        description="Optional checkpoint scoring contract for key response-required steps",
+    )
     relatedTopics: List[str] = Field(default_factory=list, description="Knowledge graph topics referenced by the step")
     requiresResponse: bool = Field(default=False, description="Whether the learner must respond before advancing")
 
@@ -313,6 +357,7 @@ class TeachingPlan(BaseModel):
     summary: str = Field(..., min_length=1, description="High-level plan summary")
     goals: List[str] = Field(default_factory=list, description="Learning goals for the session")
     steps: List[TeachingStep] = Field(default_factory=list, description="Ordered teaching steps")
+    planFinalized: bool = Field(default=True, description="Whether the plan has been fully materialized and frozen")
 
     class Config:
         json_schema_extra = {

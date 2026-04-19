@@ -4,11 +4,13 @@ Unit tests for Tutor schema
 import pytest
 from pydantic import ValidationError
 from app.schemas.tutor import (
+    CheckpointSpec,
     CourseType,
     CourseTypeDecision,
     CourseTypeStrategy,
     ContentArtifactType,
     ContentRequestResponseMode,
+    ModalityPlan,
     TeachingPlan,
     TeachingContentRequest,
     TeachingStep,
@@ -219,6 +221,8 @@ class TestTutorSessionSchemas:
         assert response.metadata["pdfId"] == "graph-task-123"
         assert response.currentStep.content.contentRequest.stepId == "step-1"
         assert response.currentStep.content.contentRequest.responseMode == ContentRequestResponseMode.PASSIVE
+        assert response.plan.planFinalized is True
+        assert response.currentStep.modalityPlan.primary == ContentArtifactType.MARKDOWN
 
 
 class TestTutorAnalyzeSchemas:
@@ -396,6 +400,36 @@ class TestTeachingContentSchemas:
         assert content.evidencePassages[0].chunkId == "chunk-pid-1"
         assert content.contentRequest.graphId == "graph-task-123"
         assert content.contentArtifactId == "content-123"
+
+    def test_modality_plan_and_checkpoint_spec_schema(self):
+        modality = ModalityPlan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[ContentArtifactType.INTERACTIVE],
+            responseMode=ContentRequestResponseMode.INTERACTIVE,
+            interactionMode="socratic",
+            rationale="knowledge_concept_probe",
+        )
+        checkpoint = CheckpointSpec(
+            checkpointId="step-2:concept_check",
+            kind="concept_check",
+            prompt="请解释核心概念。",
+            expectedEvidence=["复述定义", "举例"],
+            passThreshold=0.75,
+            retryHint="先重述定义，再补例子。",
+        )
+        step = TeachingStep(
+            id="step-2",
+            type=TeachingStepType.CONCEPT,
+            title="拆解核心概念",
+            objective="检查概念掌握",
+            modalityPlan=modality,
+            checkpointSpec=checkpoint,
+            requiresResponse=True,
+        )
+
+        assert step.modalityPlan.interactionMode == "socratic"
+        assert step.checkpointSpec is not None
+        assert step.checkpointSpec.kind == "concept_check"
 
 
 class TestTutorSessionListingSchemas:

@@ -171,12 +171,31 @@ export interface TeachingStepContent {
   contentArtifactUpdatedAt?: string | null;
 }
 
+export interface ModalityPlan {
+  primary: ContentArtifactType;
+  secondary: ContentArtifactType[];
+  responseMode: ContentRequestResponseMode;
+  interactionMode: string;
+  rationale: string;
+}
+
+export interface CheckpointSpec {
+  checkpointId: string;
+  kind: string;
+  prompt: string;
+  expectedEvidence: string[];
+  passThreshold: number;
+  retryHint: string;
+}
+
 export interface TeachingStep {
   id: string;
   type: string;
   title: string;
   objective: string;
   content: TeachingStepContent;
+  modalityPlan?: ModalityPlan;
+  checkpointSpec?: CheckpointSpec | null;
   relatedTopics?: string[];
   requiresResponse?: boolean;
 }
@@ -185,6 +204,7 @@ export interface TeachingPlan {
   summary: string;
   goals: string[];
   steps: TeachingStep[];
+  planFinalized?: boolean;
 }
 
 export interface TutorSessionMessage {

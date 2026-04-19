@@ -12,12 +12,14 @@ from fastapi import HTTPException
 from app.schemas.learning import LearningEventType, LearningProgress, LearningTrackRequest
 from app.services.content_service import ContentService, get_content_service
 from app.schemas.tutor import (
+    CheckpointSpec,
     ContentArtifactType,
     CourseType,
     CourseTypeDecision,
     CourseTypeStrategy,
     ContentRequestResponseMode,
     MessageType,
+    ModalityPlan,
     TeachingPlan,
     TeachingContentRequest,
     TeachingStep,
@@ -169,6 +171,7 @@ class TutorService:
             request.mode,
             analysis,
             request.context or {},
+            course_type=final_decision.decision,
             personalization=personalization,
         )
         self._hydrate_plan_content_artifacts(plan)
@@ -378,6 +381,8 @@ class TutorService:
         session = self.session_service.get_session(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Tutor session not found")
+        if self._backfill_legacy_session(session):
+            self.session_service.save_session(session)
         return session
 
     def _build_session_response(self, session: dict[str, Any], feedback: str | None = None) -> TutorSessionResponse:
@@ -410,6 +415,7 @@ class TutorService:
                 "store": self.session_service.backend_name,
                 "analysis": session.get("analysis"),
                 "learningSnapshot": session.get("learningSnapshot", {}),
+                "planFinalized": plan.planFinalized,
                 "finalCourseType": final_course_type.value,
                 "autoDecision": auto_decision.model_dump(mode="json"),
                 "courseTypeDecision": final_decision.model_dump(mode="json"),
@@ -491,6 +497,32 @@ class TutorService:
         analysis: TutorAnalyzeResponse,
         context: dict[str, Any],
         *,
+        course_type: CourseType,
+        personalization: dict[str, Any] | None = None,
+    ) -> TeachingPlan:
+        if course_type == CourseType.PROBLEM_SOLVING:
+            return self._build_problem_solving_plan(
+                question=question,
+                mode=mode,
+                analysis=analysis,
+                context=context,
+                personalization=personalization,
+            )
+        return self._build_knowledge_learning_plan(
+            question=question,
+            mode=mode,
+            analysis=analysis,
+            context=context,
+            personalization=personalization,
+        )
+
+    def _build_knowledge_learning_plan(
+        self,
+        *,
+        question: str,
+        mode: TutorMode,
+        analysis: TutorAnalyzeResponse,
+        context: dict[str, Any],
         personalization: dict[str, Any] | None = None,
     ) -> TeachingPlan:
         primary_label = analysis.relevantConcepts[0].node.label if analysis.relevantConcepts else "control theory"
@@ -499,6 +531,37 @@ class TutorService:
         highlights = analysis.highlightedNodeIds[:4]
         weak_concepts = list(personalization.get("pendingReviewConceptIds", []) if personalization else [])
         weak_focus = weak_concepts[0] if weak_concepts else None
+        related_topics = [concept.node.id for concept in analysis.relevantConcepts]
+
+        intro_modality = self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[ContentArtifactType.MERMAID],
+            requires_response=False,
+            interaction_mode="guided",
+            rationale="knowledge_intro_contextual_grounding",
+        )
+        concept_modality = self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[ContentArtifactType.INTERACTIVE],
+            requires_response=True,
+            interaction_mode="socratic",
+            rationale="knowledge_concept_probe_for_understanding",
+        )
+        stage_three_type = TeachingStepType.CHECKPOINT if mode == TutorMode.QUIZ else TeachingStepType.PRACTICE
+        stage_three_modality = self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[ContentArtifactType.INTERACTIVE],
+            requires_response=True,
+            interaction_mode="transfer",
+            rationale="knowledge_transfer_and_application",
+        )
+        summary_modality = self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[],
+            requires_response=False,
+            interaction_mode="reflection",
+            rationale="knowledge_summary_and_next_actions",
+        )
 
         steps = [
             TeachingStep(
@@ -506,6 +569,7 @@ class TutorService:
                 type=TeachingStepType.INTRO,
                 title=f"建立问题背景: {primary_label}",
                 objective="明确问题、目标概念和教材证据来源。",
+                modalityPlan=intro_modality,
                 content={
                     "markdown": f"我们先围绕“{question}”确认主概念 {primary_label}，并结合教材原文片段建立讲解边界。",
                     "graphHighlights": highlights,
@@ -520,9 +584,11 @@ class TutorService:
                         step_title=f"建立问题背景: {primary_label}",
                         objective="明确问题、目标概念和教材证据来源。",
                         requires_response=False,
+                        target_content_types=self._content_types_for_modality(intro_modality),
+                        render_hint=intro_modality.primary,
                     ),
                 },
-                relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
+                relatedTopics=related_topics,
                 requiresResponse=False,
             ),
             TeachingStep(
@@ -530,6 +596,16 @@ class TutorService:
                 type=TeachingStepType.CONCEPT,
                 title=f"拆解核心概念: {primary_label}",
                 objective="将概念拆成更适合理解检查的子点。",
+                modalityPlan=concept_modality,
+                checkpointSpec=self._build_checkpoint_spec(
+                    step_id="step-2",
+                    kind="concept_check",
+                    prompt=f"请你用自己的话解释 {primary_label} 在控制系统中的作用。",
+                    expected_evidence=[
+                        "提及核心概念作用",
+                        "给出一个约束或边界条件",
+                    ],
+                ),
                 content={
                     "markdown": f"现在拆解 {primary_label} 的核心作用、前置知识和常见误区，并用原文证据支撑关键说法。",
                     "guidingQuestion": f"请你用自己的话解释 {primary_label} 在控制系统中的作用。",
@@ -545,23 +621,35 @@ class TutorService:
                         step_title=f"拆解核心概念: {primary_label}",
                         objective="将概念拆成更适合理解检查的子点。",
                         requires_response=True,
+                        target_content_types=self._content_types_for_modality(concept_modality),
+                        render_hint=concept_modality.primary,
                     ),
                 },
-                relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
+                relatedTopics=related_topics,
                 requiresResponse=True,
             ),
             TeachingStep(
                 id="step-3",
-                type=TeachingStepType.PRACTICE if mode != TutorMode.QUIZ else TeachingStepType.CHECKPOINT,
+                type=stage_three_type,
                 title="理解检查与迁移",
                 objective="把概念迁移到更具体的问题场景。",
+                modalityPlan=stage_three_modality,
+                checkpointSpec=self._build_checkpoint_spec(
+                    step_id="step-3",
+                    kind="transfer_check",
+                    prompt=self._build_practice_prompt(mode, primary_label, weak_concepts),
+                    expected_evidence=[
+                        "给出具体应用场景",
+                        "说明概念与场景的映射关系",
+                    ],
+                ),
                 content={
                     "markdown": self._build_practice_markdown(mode, primary_label, weak_concepts),
                     "prompt": self._build_practice_prompt(mode, primary_label, weak_concepts),
                     "graphHighlights": highlights,
                     "evidencePassages": [passage.model_dump(mode="json") for passage in analysis.evidencePassages[1:3]],
                     "contentRequest": self._build_content_request(
-                        TeachingStepType.PRACTICE if mode != TutorMode.QUIZ else TeachingStepType.CHECKPOINT,
+                        stage_three_type,
                         analysis,
                         learner_level,
                         question=question,
@@ -570,9 +658,11 @@ class TutorService:
                         step_title="理解检查与迁移",
                         objective="把概念迁移到更具体的问题场景。",
                         requires_response=True,
+                        target_content_types=self._content_types_for_modality(stage_three_modality),
+                        render_hint=stage_three_modality.primary,
                     ),
                 },
-                relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
+                relatedTopics=related_topics,
                 requiresResponse=True,
             ),
             TeachingStep(
@@ -580,6 +670,7 @@ class TutorService:
                 type=TeachingStepType.SUMMARY,
                 title="总结与下一步",
                 objective="收束本轮学习，并给出下一步建议。",
+                modalityPlan=summary_modality,
                 content={
                     "markdown": "最后把本轮核心结论收束成可复述的要点，并明确下一步应继续追踪的图谱节点。",
                     "nextActions": [
@@ -600,9 +691,11 @@ class TutorService:
                         step_title="总结与下一步",
                         objective="收束本轮学习，并给出下一步建议。",
                         requires_response=False,
+                        target_content_types=self._content_types_for_modality(summary_modality),
+                        render_hint=summary_modality.primary,
                     ),
                 },
-                relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
+                relatedTopics=related_topics,
                 requiresResponse=False,
             ),
         ]
@@ -615,6 +708,203 @@ class TutorService:
                 f"优先补强薄弱概念：{weak_focus}" if weak_focus else "记录并回顾当前未稳固概念",
             ],
             steps=steps,
+            planFinalized=True,
+        )
+
+    def _build_problem_solving_plan(
+        self,
+        *,
+        question: str,
+        mode: TutorMode,
+        analysis: TutorAnalyzeResponse,
+        context: dict[str, Any],
+        personalization: dict[str, Any] | None = None,
+    ) -> TeachingPlan:
+        primary_label = analysis.relevantConcepts[0].node.label if analysis.relevantConcepts else "control theory"
+        learner_level = str(context.get("learning_level", "intermediate"))
+        highlights = analysis.highlightedNodeIds[:4]
+        evidence = [passage.model_dump(mode="json") for passage in analysis.evidencePassages[:3]]
+        weak_concepts = list(personalization.get("pendingReviewConceptIds", []) if personalization else [])
+        weak_focus = weak_concepts[0] if weak_concepts else None
+        related_topics = [concept.node.id for concept in analysis.relevantConcepts]
+
+        framing_modality = self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[ContentArtifactType.LATEX],
+            requires_response=False,
+            interaction_mode="problem_framing",
+            rationale="problem_track_requires_equation_framing",
+        )
+        variable_checkpoint_modality = self._build_modality_plan(
+            primary=ContentArtifactType.INTERACTIVE,
+            secondary=[ContentArtifactType.MARKDOWN],
+            requires_response=True,
+            interaction_mode="variable_check",
+            rationale="problem_track_checks_knowns_unknowns_before_derivation",
+        )
+        derivation_modality = self._build_modality_plan(
+            primary=ContentArtifactType.LATEX,
+            secondary=[ContentArtifactType.MARKDOWN, ContentArtifactType.INTERACTIVE],
+            requires_response=True,
+            interaction_mode="guided_derivation",
+            rationale="problem_track_prioritizes_formula_and_steps",
+        )
+        summary_modality = self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[],
+            requires_response=False,
+            interaction_mode="reflection",
+            rationale="problem_track_wraps_with_reusable_strategy",
+        )
+
+        steps = [
+            TeachingStep(
+                id="step-1",
+                type=TeachingStepType.INTRO,
+                title=f"题目建模与目标定义: {primary_label}",
+                objective="把题目转成可解的变量、约束与目标表达。",
+                modalityPlan=framing_modality,
+                content={
+                    "markdown": f"先把“{question}”转为求解任务：明确已知量、未知量、目标指标，并定位 {primary_label} 在其中的作用。",
+                    "graphHighlights": highlights,
+                    "evidencePassages": evidence[:2],
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.INTRO,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-1",
+                        step_title=f"题目建模与目标定义: {primary_label}",
+                        objective="把题目转成可解的变量、约束与目标表达。",
+                        requires_response=False,
+                        target_content_types=self._content_types_for_modality(framing_modality),
+                        render_hint=framing_modality.primary,
+                    ),
+                },
+                relatedTopics=related_topics,
+                requiresResponse=False,
+            ),
+            TeachingStep(
+                id="step-2",
+                type=TeachingStepType.CHECKPOINT,
+                title="变量盘点与约束检查",
+                objective="确认求解前提与变量关系是否完整。",
+                modalityPlan=variable_checkpoint_modality,
+                checkpointSpec=self._build_checkpoint_spec(
+                    step_id="step-2",
+                    kind="variable_constraint_check",
+                    prompt="请列出两个已知量、一个目标量，以及一个你认为关键的约束条件。",
+                    expected_evidence=[
+                        "至少 2 个已知量",
+                        "至少 1 个目标量",
+                        "至少 1 个约束条件",
+                    ],
+                ),
+                content={
+                    "markdown": "在正式推导前，先校对变量定义、单位与约束，避免后续计算方向偏离。",
+                    "guidingQuestion": "请列出两个已知量、一个目标量，以及一个关键约束。",
+                    "graphHighlights": highlights,
+                    "evidencePassages": evidence,
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.CHECKPOINT,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-2",
+                        step_title="变量盘点与约束检查",
+                        objective="确认求解前提与变量关系是否完整。",
+                        requires_response=True,
+                        target_content_types=self._content_types_for_modality(variable_checkpoint_modality),
+                        render_hint=variable_checkpoint_modality.primary,
+                    ),
+                },
+                relatedTopics=related_topics,
+                requiresResponse=True,
+            ),
+            TeachingStep(
+                id="step-3",
+                type=TeachingStepType.PRACTICE,
+                title="分步推导与结果验证",
+                objective="执行求解步骤并验证结果是否满足约束。",
+                modalityPlan=derivation_modality,
+                checkpointSpec=self._build_checkpoint_spec(
+                    step_id="step-3",
+                    kind="derivation_check",
+                    prompt="给出你的推导骨架：先写关键公式，再说明每一步如何逼近目标量。",
+                    expected_evidence=[
+                        "出现关键公式或等价表达",
+                        "步骤顺序清晰",
+                        "包含结果验证思路",
+                    ],
+                ),
+                content={
+                    "markdown": "现在进入求解：按步骤展开关键公式，并在每一步后检查是否仍满足题目约束。",
+                    "prompt": "请写出关键公式并说明每一步推导对应的目标。",
+                    "graphHighlights": highlights,
+                    "evidencePassages": evidence[1:3],
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.PRACTICE,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-3",
+                        step_title="分步推导与结果验证",
+                        objective="执行求解步骤并验证结果是否满足约束。",
+                        requires_response=True,
+                        target_content_types=self._content_types_for_modality(derivation_modality),
+                        render_hint=derivation_modality.primary,
+                    ),
+                },
+                relatedTopics=related_topics,
+                requiresResponse=True,
+            ),
+            TeachingStep(
+                id="step-4",
+                type=TeachingStepType.SUMMARY,
+                title="解题模板复盘与下一题迁移",
+                objective="抽象本题解题模板并准备迁移到新题。",
+                modalityPlan=summary_modality,
+                content={
+                    "markdown": "收束本题：总结可复用的解题模板、易错点，以及下一题先检查的条件。",
+                    "nextActions": [
+                        "复述本题的变量-约束-目标三元组",
+                        "复盘关键公式适用边界",
+                        f"优先补练概念 {weak_focus}" if weak_focus else "补练当前最薄弱概念",
+                        "用同一模板尝试一道变式题",
+                    ],
+                    "graphHighlights": highlights,
+                    "evidencePassages": evidence[:2],
+                    "contentRequest": self._build_content_request(
+                        TeachingStepType.SUMMARY,
+                        analysis,
+                        learner_level,
+                        question=question,
+                        mode=mode,
+                        step_id="step-4",
+                        step_title="解题模板复盘与下一题迁移",
+                        objective="抽象本题解题模板并准备迁移到新题。",
+                        requires_response=False,
+                        target_content_types=self._content_types_for_modality(summary_modality),
+                        render_hint=summary_modality.primary,
+                    ),
+                },
+                relatedTopics=related_topics,
+                requiresResponse=False,
+            ),
+        ]
+        return TeachingPlan(
+            summary=f"围绕“{question}”的四步求解型教学计划。",
+            goals=[
+                "明确已知量、未知量与约束",
+                "建立可执行的求解步骤",
+                "完成推导并自检结果合理性",
+                f"优先补强薄弱概念：{weak_focus}" if weak_focus else "沉淀可迁移的解题模板",
+            ],
+            steps=steps,
+            planFinalized=True,
         )
 
     def _build_content_request(
@@ -629,7 +919,11 @@ class TutorService:
         step_title: str,
         objective: str,
         requires_response: bool,
+        target_content_types: list[ContentArtifactType] | None = None,
+        render_hint: ContentArtifactType | None = None,
     ) -> TeachingContentRequest:
+        requested_types = target_content_types or [ContentArtifactType.MARKDOWN]
+        primary_hint = render_hint or requested_types[0]
         return TeachingContentRequest(
             stage=stage,
             stepId=step_id,
@@ -648,9 +942,164 @@ class TutorService:
             conceptIds=[concept.node.id for concept in analysis.relevantConcepts],
             highlightedNodeIds=analysis.highlightedNodeIds,
             evidencePassageIds=[passage.chunkId for passage in analysis.evidencePassages[:3]],
-            targetContentTypes=[ContentArtifactType.MARKDOWN],
-            renderHint=ContentArtifactType.MARKDOWN,
+            targetContentTypes=requested_types,
+            renderHint=primary_hint,
         )
+
+    @staticmethod
+    def _build_modality_plan(
+        *,
+        primary: ContentArtifactType,
+        secondary: list[ContentArtifactType],
+        requires_response: bool,
+        interaction_mode: str,
+        rationale: str,
+    ) -> ModalityPlan:
+        return ModalityPlan(
+            primary=primary,
+            secondary=secondary,
+            responseMode=(
+                ContentRequestResponseMode.INTERACTIVE
+                if requires_response
+                else ContentRequestResponseMode.PASSIVE
+            ),
+            interactionMode=interaction_mode,
+            rationale=rationale,
+        )
+
+    @staticmethod
+    def _content_types_for_modality(plan: ModalityPlan) -> list[ContentArtifactType]:
+        ordered = [plan.primary, *plan.secondary]
+        deduped: list[ContentArtifactType] = []
+        for item in ordered:
+            if item not in deduped:
+                deduped.append(item)
+        return deduped or [ContentArtifactType.MARKDOWN]
+
+    @staticmethod
+    def _build_checkpoint_spec(
+        *,
+        step_id: str,
+        kind: str,
+        prompt: str,
+        expected_evidence: list[str],
+    ) -> CheckpointSpec:
+        return CheckpointSpec(
+            checkpointId=f"{step_id}:{kind}",
+            kind=kind,
+            prompt=prompt,
+            expectedEvidence=expected_evidence,
+            passThreshold=0.7,
+            retryHint="请先重述关键概念，再补充与场景/约束的对应关系。",
+        )
+
+    def _backfill_legacy_session(self, session: dict[str, Any]) -> bool:
+        changed = False
+
+        if not isinstance(session.get("courseType"), str):
+            auto_decision = self.classify_course_type(session.get("question", ""), session.get("context"))
+            final_decision = self._resolve_course_type_decision(
+                auto_decision,
+                strategy=CourseTypeStrategy.AUTO,
+                course_type_override=None,
+            )
+            session["courseType"] = final_decision.decision.value
+            session["autoCourseTypeDecision"] = auto_decision.model_dump(mode="json")
+            session["courseTypeDecision"] = final_decision.model_dump(mode="json")
+            session["courseTypeStrategy"] = CourseTypeStrategy.AUTO.value
+            session.setdefault("courseTypeOverride", None)
+            changed = True
+
+        final_course_type = self._read_final_course_type(session)
+        auto_decision = self._read_auto_course_type_decision(session, final_course_type)
+        final_decision = self._read_final_course_type_decision(session, final_course_type, auto_decision)
+
+        if session.get("autoCourseTypeDecision") != auto_decision.model_dump(mode="json"):
+            session["autoCourseTypeDecision"] = auto_decision.model_dump(mode="json")
+            changed = True
+        if session.get("courseTypeDecision") != final_decision.model_dump(mode="json"):
+            session["courseTypeDecision"] = final_decision.model_dump(mode="json")
+            changed = True
+        if not isinstance(session.get("courseTypeStrategy"), str):
+            session["courseTypeStrategy"] = CourseTypeStrategy.AUTO.value
+            changed = True
+        if "courseTypeOverride" not in session:
+            session["courseTypeOverride"] = None
+            changed = True
+
+        plan = session.get("plan")
+        if isinstance(plan, dict):
+            if "planFinalized" not in plan:
+                plan["planFinalized"] = True
+                changed = True
+
+            for step in plan.get("steps", []):
+                if not isinstance(step, dict):
+                    continue
+                step_id = str(step.get("id") or "step")
+                step_type = self._coerce_step_type(step.get("type"))
+                requires_response = bool(step.get("requiresResponse"))
+
+                if not isinstance(step.get("modalityPlan"), dict):
+                    step["modalityPlan"] = self._legacy_modality_plan(step_type, requires_response).model_dump(mode="json")
+                    changed = True
+
+                if self._step_needs_checkpoint(step_type, requires_response) and step.get("checkpointSpec") is None:
+                    step["checkpointSpec"] = self._build_checkpoint_spec(
+                        step_id=step_id,
+                        kind="legacy_checkpoint",
+                        prompt="请复述关键点并说明如何应用。",
+                        expected_evidence=["关键点复述", "应用场景说明"],
+                    ).model_dump(mode="json")
+                    changed = True
+
+        return changed
+
+    @staticmethod
+    def _coerce_step_type(raw_step_type: Any) -> TeachingStepType:
+        if isinstance(raw_step_type, TeachingStepType):
+            return raw_step_type
+        if isinstance(raw_step_type, str):
+            try:
+                return TeachingStepType(raw_step_type)
+            except ValueError:
+                return TeachingStepType.CONCEPT
+        return TeachingStepType.CONCEPT
+
+    def _legacy_modality_plan(self, step_type: TeachingStepType, requires_response: bool) -> ModalityPlan:
+        if step_type == TeachingStepType.SUMMARY:
+            return self._build_modality_plan(
+                primary=ContentArtifactType.MARKDOWN,
+                secondary=[],
+                requires_response=requires_response,
+                interaction_mode="reflection",
+                rationale="legacy_summary_default",
+            )
+        if step_type in {TeachingStepType.PRACTICE, TeachingStepType.CHECKPOINT}:
+            return self._build_modality_plan(
+                primary=ContentArtifactType.MARKDOWN,
+                secondary=[ContentArtifactType.INTERACTIVE],
+                requires_response=requires_response,
+                interaction_mode="practice",
+                rationale="legacy_practice_default",
+            )
+        return self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[ContentArtifactType.MERMAID],
+            requires_response=requires_response,
+            interaction_mode="guided",
+            rationale="legacy_intro_concept_default",
+        )
+
+    @staticmethod
+    def _step_needs_checkpoint(step_type: TeachingStepType, requires_response: bool) -> bool:
+        if not requires_response:
+            return False
+        return step_type in {
+            TeachingStepType.CONCEPT,
+            TeachingStepType.PRACTICE,
+            TeachingStepType.CHECKPOINT,
+        }
 
     def _rank_passages(
         self,

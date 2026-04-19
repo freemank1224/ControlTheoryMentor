@@ -1,6 +1,6 @@
 # Course Generation Regression Checklist
 
-- 文档版本: v1.0
+- 文档版本: v1.1
 - 更新时间: 2026-04-19
 
 ## 使用说明
@@ -29,15 +29,25 @@
   - `npm run test -- tests/integration/api.test.ts --run`
   - 结果：`9 passed`
 
-## Phase 2: 双轨规划引擎（待执行）
+## Phase 2: 双轨规划引擎（已完成）
 
-- [ ] knowledge_learning builder 输出 4 步结构
-- [ ] problem_solving builder 输出 4 步结构
-- [ ] 每步包含 modalityPlan
-- [ ] 关键步包含 checkpointSpec
-- [ ] next/back/jump/respond 不触发重规划
-- [ ] 旧会话缺省 courseType 回填策略验证
-- [ ] golden-plan 快照稳定
+- [x] knowledge_learning builder 输出 4 步结构
+- [x] problem_solving builder 输出 4 步结构
+- [x] 每步包含 modalityPlan
+- [x] 关键步包含 checkpointSpec
+- [x] next/back/jump/respond 不触发重规划
+- [x] 旧会话缺省 courseType 回填策略验证
+- [x] golden-plan 快照稳定
+
+### Phase 2 回归证据
+
+- backend unit+integration:
+  - c:/Users/Dyson/Documents/ControlTheoryMentor/.venv/Scripts/python.exe -m pytest tests/unit/test_tutor_schema.py tests/unit/test_tutor_service_phase2_planner.py tests/integration/test_tutor_api.py -vv
+  - 结果: 46 passed, 1 skipped
+- 关键断言覆盖:
+  - 双 builder golden 快照: tests/unit/test_tutor_service_phase2_planner.py
+  - 旧会话回填: tests/unit/test_tutor_service_phase2_planner.py
+  - next/back/jump/respond 不重规划: tests/integration/test_tutor_api.py::TestTutorSessionAPI::test_list_sessions_back_jump_and_respond_flow
 
 ## Phase 3: 多模态与参数交互（待执行）
 
@@ -55,7 +65,8 @@
 ## 三件套门禁
 
 - [x] Phase 1 handoff 已更新
+- [x] Phase 2 handoff 已更新
 - [x] 本回归清单已更新
 - [x] 回退策略文档已更新
 
-结论：Phase 1 三件套齐备，可进入 Phase 2。
+结论：Phase 2 三件套齐备，可进入 Phase 3。

@@ -411,6 +411,7 @@ class TestTutorSessionAPI:
         data = response.json()
         assert data["sessionId"].startswith("session-")
         assert data["status"] == "ready"
+        assert data["plan"]["planFinalized"] is True
         assert len(data["plan"]["steps"]) == 4
         assert data["metadata"]["analysis"]["highlightedNodeIds"][0] == "concept-pid"
         assert data["metadata"]["store"] == "memory-test"
@@ -419,10 +420,33 @@ class TestTutorSessionAPI:
         assert intro_request["graphId"] == "graph-task-123"
         assert intro_request["sessionMode"] == "interactive"
         assert intro_request["responseMode"] == "passive"
-        assert intro_request["targetContentTypes"] == ["markdown"]
+        assert intro_request["targetContentTypes"] == ["markdown", "mermaid"]
+        assert data["plan"]["steps"][0]["modalityPlan"]["primary"] == "markdown"
+        assert data["plan"]["steps"][1]["checkpointSpec"]["kind"] == "concept_check"
         assert data["plan"]["steps"][0]["content"]["contentArtifactId"].startswith("content-")
         assert data["plan"]["steps"][0]["content"]["contentArtifactStatus"] == "ready"
         assert data["metadata"]["finalCourseType"] == "knowledge_learning"
+
+    def test_start_session_problem_solving_uses_problem_builder(self, client: TestClient):
+        response = client.post(
+            "/api/tutor/session/start",
+            json={
+                "question": "Given G(s)=1/(s+1), calculate Kp and explain constraints.",
+                "pdfId": "graph-task-123",
+                "mode": "problem_solving",
+                "courseTypeStrategy": "manual",
+                "courseTypeOverride": "problem_solving",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metadata"]["finalCourseType"] == "problem_solving"
+        assert data["plan"]["planFinalized"] is True
+        assert data["plan"]["steps"][0]["title"].startswith("题目建模与目标定义")
+        assert data["plan"]["steps"][1]["type"] == "checkpoint"
+        assert data["plan"]["steps"][2]["modalityPlan"]["primary"] == "latex"
+        assert data["plan"]["steps"][2]["checkpointSpec"]["kind"] == "derivation_check"
 
     def test_start_session_legacy_course_type_field_is_compatible(self, client: TestClient):
         response = client.post(
@@ -449,6 +473,7 @@ class TestTutorSessionAPI:
             },
         )
         session_id = start_response.json()["sessionId"]
+        baseline_plan = start_response.json()["plan"]
 
         sessions = client.get("/api/tutor/sessions")
         assert sessions.status_code == 200
@@ -459,16 +484,19 @@ class TestTutorSessionAPI:
         step_one = client.post(f"/api/tutor/session/{session_id}/next")
         assert step_one.status_code == 200
         assert step_one.json()["currentStep"]["id"] == "step-1"
+        assert step_one.json()["plan"] == baseline_plan
 
         step_two = client.post(f"/api/tutor/session/{session_id}/next")
         assert step_two.status_code == 200
         assert step_two.json()["currentStep"]["id"] == "step-2"
         assert step_two.json()["needsUserResponse"] is True
+        assert step_two.json()["plan"] == baseline_plan
 
         back = client.post(f"/api/tutor/session/{session_id}/back")
         assert back.status_code == 200
         assert back.json()["currentStep"]["id"] == "step-1"
         assert back.json()["feedback"] == "Moved back to the previous step."
+        assert back.json()["plan"] == baseline_plan
 
         jump = client.post(
             f"/api/tutor/session/{session_id}/jump",
@@ -478,6 +506,7 @@ class TestTutorSessionAPI:
         jump_data = jump.json()
         assert jump_data["currentStep"]["id"] == "step-3"
         assert jump_data["needsUserResponse"] is True
+        assert jump_data["plan"] == baseline_plan
 
         respond = client.post(
             f"/api/tutor/session/{session_id}/respond",
@@ -487,6 +516,7 @@ class TestTutorSessionAPI:
         respond_data = respond.json()
         assert respond_data["status"] == "ready"
         assert respond_data["feedback"] is not None
+        assert respond_data["plan"] == baseline_plan
 
     def test_session_can_complete(self, client: TestClient):
         start_response = client.post(
