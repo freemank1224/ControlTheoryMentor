@@ -101,6 +101,40 @@ describe('API Client', () => {
     expect(result.metadata?.finalCourseType).toBe('problem_solving');
   });
 
+  it('should start tutor session with mixed legacy and new contract fields', async () => {
+    const mockRequest = {
+      question: 'Explain PID controllers',
+      pdfId: 'pdf-123',
+      courseTypeStrategy: 'manual' as const,
+      courseTypeOverride: 'knowledge_learning' as const,
+      courseType: 'problem_solving' as const,
+    };
+
+    const mockResponse = {
+      sessionId: 'session-mixed-1',
+      plan: { steps: [] },
+      status: 'ready',
+      metadata: {
+        finalCourseType: 'knowledge_learning',
+      },
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const result = await apiClient.startTutorSession(mockRequest);
+    expect(result.sessionId).toBe('session-mixed-1');
+    expect(result.metadata?.finalCourseType).toBe('knowledge_learning');
+
+    const fetchCall = (global.fetch as any).mock.calls[0];
+    const payload = JSON.parse(fetchCall[1].body as string);
+    expect(payload.courseTypeStrategy).toBe('manual');
+    expect(payload.courseTypeOverride).toBe('knowledge_learning');
+    expect(payload.courseType).toBe('problem_solving');
+  });
+
   it('should analyze tutor question with strategy and override', async () => {
     const mockResponse = {
       graphId: 'graph-task-123',

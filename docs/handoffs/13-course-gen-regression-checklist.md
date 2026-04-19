@@ -70,17 +70,45 @@
   - `npm run test -- src/components/content/ContentRenderer.test.tsx --run`
   - 结果: `2 passed`
 
-## Phase 4: 灰度与硬化（待执行）
+## Phase 4: 灰度与硬化（已完成）
 
-- [ ] legacy + course-v1 并行兼容回归
-- [ ] 性能与稳定性门禁达标
-- [ ] 故障演练与回退验证完成
+- [x] legacy + course-v1 并行兼容回归
+- [x] 性能与稳定性门禁达标
+- [x] 故障演练与回退验证完成
+
+### Phase 4 回归证据
+
+- backend Phase 4 hardening gates:
+  - `c:/Users/Dyson/Documents/ControlTheoryMentor/.venv/Scripts/python.exe -m pytest tests/integration/test_tutor_api_phase4_hardening.py -q -s`
+  - 结果: `4 passed`
+  - 覆盖点:
+    - mixed legacy/new/mixed-fields 契约矩阵
+    - mixed canary traffic 无 blocking 5xx
+    - 性能门禁（in-memory canary）
+    - rollback drill（Redis primary down -> memory fallback -> failback）
+- backend targeted compatibility pack:
+  - `c:/Users/Dyson/Documents/ControlTheoryMentor/.venv/Scripts/python.exe -m pytest tests/unit/test_course_type_classifier.py::test_resolve_auto_strategy_applies_legacy_override_if_present tests/unit/test_tutor_schema.py::TestTutorAnalyzeSchemas::test_tutor_analyze_request_legacy_course_type_maps_to_override tests/unit/test_tutor_schema.py::TestTutorAnalyzeSchemas::test_tutor_session_start_request_manual_override_and_legacy_field tests/integration/test_tutor_api.py::TestTutorAnalyzeAPI::test_tutor_analyze_legacy_course_type_field_is_compatible tests/integration/test_tutor_api.py::TestTutorSessionAPI::test_session_start_supports_auto_manual_override_paths tests/integration/test_tutor_api.py::TestTutorSessionAPI::test_start_session_legacy_course_type_field_is_compatible -q`
+  - 结果: `8 passed`
+- frontend API compatibility regression:
+  - `npm run test -- tests/integration/api.test.ts --run`
+  - 结果: `10 passed`
+  - 覆盖点: mixed legacy/new 字段同时透传（`courseTypeStrategy + courseTypeOverride + courseType`）
+
+### Phase 4 性能验收快照
+
+- analyze: avg `1.23 ms`, p95 `1.45 ms`
+- session/start: avg `2.82 ms`, p95 `3.41 ms`
+- 门禁阈值:
+  - analyze p95 < `200 ms`
+  - session/start p95 < `350 ms`
+- 结论: 通过（显著低于阈值）
 
 ## 三件套门禁
 
 - [x] Phase 1 handoff 已更新
 - [x] Phase 2 handoff 已更新
+- [x] Phase 4 handoff 已更新
 - [x] 本回归清单已更新
 - [x] 回退策略文档已更新
 
-结论：Phase 3 三件套齐备，可进入 Phase 4。
+结论：Phase 4 三件套齐备，满足 GA 准入。

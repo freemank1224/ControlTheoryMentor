@@ -1,6 +1,6 @@
 # Course Generation Failure and Rollback Playbook
 
-- 文档版本: v1.2
+- 文档版本: v1.3
 - 更新时间: 2026-04-19
 
 ## 1. 目的
@@ -134,7 +134,48 @@
 3. `tests/integration/test_content_api.py` 通过。
 4. `npm run test:e2e -- tests/e2e/tutor-learning.spec.ts` 通过。
 
-## 7. 责任与升级
+## 7. Phase 4 专项：灰度发布与硬化
+
+### 7.1 失败信号
+
+1. 混合版本请求（legacy `courseType`、new `courseTypeStrategy/courseTypeOverride`、mixed-fields）任一路径出现阻塞型 5xx。
+2. 同一问题在 mixed 请求下 `finalCourseType` 非确定性漂移（同输入多次返回不一致）。
+3. 灰度期间 `POST /api/tutor/session/start` p95 超过 `350 ms` 或 `POST /api/tutor/analyze` p95 超过 `200 ms`（in-memory canary 基线）。
+4. 主存储故障（Redis）后无法切到 fallback，或恢复后无法 failback 到 primary。
+
+### 7.2 快速止损
+
+1. 前端将策略入口收敛到 `auto`，暂时隐藏 manual/override UI。
+2. API 网关层对异常请求回落到 legacy payload（仅保留 `courseType` 或不传新字段）。
+3. 若主存储抖动，优先保障会话可用性：允许 fallback 存储承接请求，禁止阻塞主路径。
+
+### 7.3 回退策略
+
+#### 软回退（优先）
+
+1. 保持 dual-contract schema，不下线字段，但业务策略统一回到 `courseTypeStrategy=auto`。
+2. 保留 metadata `autoDecision/finalCourseType` 观测链路，方便灰度后复盘。
+3. 继续执行 mixed compatibility 回归，确保 legacy 客户端零改动可用。
+
+#### 硬回退（必要时）
+
+1. 回退 [backend/app/schemas/tutor.py](backend/app/schemas/tutor.py) 和 [backend/app/services/tutor_service.py](backend/app/services/tutor_service.py) 到仅 legacy 稳定契约版本。
+2. 回退 [frontend/src/components/tutor/TutorWorkspace.tsx](frontend/src/components/tutor/TutorWorkspace.tsx) 的策略与覆盖入口，只保留 legacy 请求形态。
+3. 保留 [backend/tests/integration/test_tutor_api_phase4_hardening.py](backend/tests/integration/test_tutor_api_phase4_hardening.py) 作为回归防线，确保再次前进时可复测。
+
+### 7.4 Phase 4 最小恢复验证
+
+1. `tests/integration/test_tutor_api_phase4_hardening.py` 通过（mixed compatibility + no-blocking-5xx + perf + rollback drill）。
+2. `tests/integration/test_tutor_api.py` 中 legacy 兼容路径通过。
+3. `frontend/tests/integration/api.test.ts` 通过（含 mixed-fields 透传测试）。
+
+### 7.5 本轮回退演练记录（2026-04-19）
+
+1. 使用 `FlakyPrimaryStore + FailoverSessionService` 完成 primary down -> fallback -> recover -> failback 演练。
+2. 演练过程中 `metadata.store` 按预期在 `redis-failover-phase4` 与 `memory-fallback` 间切换。
+3. 演练前后 `finalCourseType` 与 `planFinalized` 契约保持稳定。
+
+## 8. 责任与升级
 
 1. P0/P1 触发：立即停止进入下一阶段，先完成本阶段回退闭环。
 2. 未完成三件套更新：禁止标记阶段完成。
