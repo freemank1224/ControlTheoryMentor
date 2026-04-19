@@ -19,7 +19,7 @@ import type {
 
 import './TutorWorkspace.css';
 
-const DEFAULT_TUTOR_GRAPH_ID = import.meta.env.VITE_DEFAULT_GRAPH_ID || 'graph-fixture-e2e-real';
+const DEFAULT_TUTOR_GRAPH_ID = import.meta.env.VITE_DEFAULT_GRAPH_ID || '';
 
 function messageRoleLabel(role: string): string {
   if (role === 'assistant') {
@@ -78,9 +78,9 @@ function buildCourseTypePayload(
 }
 
 export function TutorWorkspace() {
-  const [question, setQuestion] = useState('How does PID reduce steady-state error?');
+  const [question, setQuestion] = useState('');
   const [graphId, setGraphId] = useState(DEFAULT_TUTOR_GRAPH_ID);
-  const [learnerId, setLearnerId] = useState('learner-demo');
+  const [learnerId, setLearnerId] = useState('');
   const [mode, setMode] = useState<TutorMode>('interactive');
   const [courseTypeStrategy, setCourseTypeStrategy] = useState<CourseTypeStrategy>('auto');
   const [courseTypeOverride, setCourseTypeOverride] = useState<CourseType>('knowledge_learning');

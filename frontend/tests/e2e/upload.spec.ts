@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('PDF 上传功能', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('http://localhost:3000/upload');
+    await page.goto('/upload');
   });
 
   test('显示上传卡片', async ({ page }) => {

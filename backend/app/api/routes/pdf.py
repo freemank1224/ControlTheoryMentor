@@ -195,7 +195,13 @@ async def list_pdfs():
     - Returns list of all PDFs with their metadata
     """
     return [
-        PDFUploadResponse(**pdf_data)
+        PDFUploadResponse(
+            id=str(pdf_data.get("id")),
+            taskId=pdf_data.get("task_id"),
+            filename=str(pdf_data.get("filename")),
+            page_count=int(pdf_data.get("page_count", 1)),
+            status=pdf_data.get("status", PDFStatus.UPLOADED),
+        )
         for pdf_data in pdf_storage.values()
     ]
 

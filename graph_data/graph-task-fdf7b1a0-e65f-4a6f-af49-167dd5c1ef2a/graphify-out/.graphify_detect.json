@@ -1,0 +1,17 @@
+{
+  "files": {
+    "code": [],
+    "document": [],
+    "paper": [
+      "/shared/graph_data/graph-task-fdf7b1a0-e65f-4a6f-af49-167dd5c1ef2a/raw/pdf-59fee948-cea4-48c8-8774-a03b51aea25e.pdf"
+    ],
+    "image": [],
+    "video": []
+  },
+  "total_files": 1,
+  "total_words": 0,
+  "needs_graph": false,
+  "warning": "Corpus is ~0 words - fits in a single context window. You may not need a graph.",
+  "skipped_sensitive": [],
+  "graphifyignore_patterns": 0
+}
