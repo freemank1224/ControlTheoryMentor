@@ -690,7 +690,7 @@ class TutorService:
         )
         concept_modality = self._build_modality_plan(
             primary=ContentArtifactType.MARKDOWN,
-            secondary=[ContentArtifactType.INTERACTIVE],
+            secondary=[ContentArtifactType.MERMAID, ContentArtifactType.LATEX, ContentArtifactType.INTERACTIVE],
             requires_response=True,
             interaction_mode="socratic",
             rationale="knowledge_concept_probe_for_understanding",
@@ -698,7 +698,7 @@ class TutorService:
         stage_three_type = TeachingStepType.CHECKPOINT if mode == TutorMode.QUIZ else TeachingStepType.PRACTICE
         stage_three_modality = self._build_modality_plan(
             primary=ContentArtifactType.MARKDOWN,
-            secondary=[ContentArtifactType.INTERACTIVE],
+            secondary=[ContentArtifactType.MERMAID, ContentArtifactType.INTERACTIVE],
             requires_response=True,
             interaction_mode="transfer",
             rationale="knowledge_transfer_and_application",
@@ -732,6 +732,7 @@ class TutorService:
                         step_title=f"建立问题背景: {primary_label}",
                         objective="明确问题、目标概念和教材证据来源。",
                         requires_response=False,
+                        course_type=CourseType.KNOWLEDGE_LEARNING,
                         target_content_types=self._content_types_for_modality(intro_modality),
                         render_hint=intro_modality.primary,
                     ),
@@ -769,6 +770,7 @@ class TutorService:
                         step_title=f"拆解核心概念: {primary_label}",
                         objective="将概念拆成更适合理解检查的子点。",
                         requires_response=True,
+                        course_type=CourseType.KNOWLEDGE_LEARNING,
                         target_content_types=self._content_types_for_modality(concept_modality),
                         render_hint=concept_modality.primary,
                     ),
@@ -806,6 +808,7 @@ class TutorService:
                         step_title="理解检查与迁移",
                         objective="把概念迁移到更具体的问题场景。",
                         requires_response=True,
+                        course_type=CourseType.KNOWLEDGE_LEARNING,
                         target_content_types=self._content_types_for_modality(stage_three_modality),
                         render_hint=stage_three_modality.primary,
                     ),
@@ -839,6 +842,7 @@ class TutorService:
                         step_title="总结与下一步",
                         objective="收束本轮学习，并给出下一步建议。",
                         requires_response=False,
+                        course_type=CourseType.KNOWLEDGE_LEARNING,
                         target_content_types=self._content_types_for_modality(summary_modality),
                         render_hint=summary_modality.primary,
                     ),
@@ -878,21 +882,21 @@ class TutorService:
 
         framing_modality = self._build_modality_plan(
             primary=ContentArtifactType.MARKDOWN,
-            secondary=[ContentArtifactType.LATEX],
+            secondary=[ContentArtifactType.LATEX, ContentArtifactType.MERMAID],
             requires_response=False,
             interaction_mode="problem_framing",
             rationale="problem_track_requires_equation_framing",
         )
         variable_checkpoint_modality = self._build_modality_plan(
             primary=ContentArtifactType.INTERACTIVE,
-            secondary=[ContentArtifactType.MARKDOWN],
+            secondary=[ContentArtifactType.MARKDOWN, ContentArtifactType.LATEX],
             requires_response=True,
             interaction_mode="variable_check",
             rationale="problem_track_checks_knowns_unknowns_before_derivation",
         )
         derivation_modality = self._build_modality_plan(
             primary=ContentArtifactType.LATEX,
-            secondary=[ContentArtifactType.MARKDOWN, ContentArtifactType.INTERACTIVE],
+            secondary=[ContentArtifactType.MARKDOWN, ContentArtifactType.INTERACTIVE, ContentArtifactType.MERMAID],
             requires_response=True,
             interaction_mode="guided_derivation",
             rationale="problem_track_prioritizes_formula_and_steps",
@@ -926,6 +930,7 @@ class TutorService:
                         step_title=f"题目建模与目标定义: {primary_label}",
                         objective="把题目转成可解的变量、约束与目标表达。",
                         requires_response=False,
+                        course_type=CourseType.PROBLEM_SOLVING,
                         target_content_types=self._content_types_for_modality(framing_modality),
                         render_hint=framing_modality.primary,
                     ),
@@ -964,6 +969,7 @@ class TutorService:
                         step_title="变量盘点与约束检查",
                         objective="确认求解前提与变量关系是否完整。",
                         requires_response=True,
+                        course_type=CourseType.PROBLEM_SOLVING,
                         target_content_types=self._content_types_for_modality(variable_checkpoint_modality),
                         render_hint=variable_checkpoint_modality.primary,
                     ),
@@ -1002,6 +1008,7 @@ class TutorService:
                         step_title="分步推导与结果验证",
                         objective="执行求解步骤并验证结果是否满足约束。",
                         requires_response=True,
+                        course_type=CourseType.PROBLEM_SOLVING,
                         target_content_types=self._content_types_for_modality(derivation_modality),
                         render_hint=derivation_modality.primary,
                     ),
@@ -1035,6 +1042,7 @@ class TutorService:
                         step_title="解题模板复盘与下一题迁移",
                         objective="抽象本题解题模板并准备迁移到新题。",
                         requires_response=False,
+                        course_type=CourseType.PROBLEM_SOLVING,
                         target_content_types=self._content_types_for_modality(summary_modality),
                         render_hint=summary_modality.primary,
                     ),
@@ -1069,6 +1077,7 @@ class TutorService:
         requires_response: bool,
         target_content_types: list[ContentArtifactType] | None = None,
         render_hint: ContentArtifactType | None = None,
+        course_type: CourseType | None = None,
     ) -> TeachingContentRequest:
         requested_types = target_content_types or [ContentArtifactType.MARKDOWN]
         primary_hint = render_hint or requested_types[0]
@@ -1107,6 +1116,11 @@ class TutorService:
                 if isinstance(domain_compatibility.get("confidence"), (int, float))
                 else None
             ),
+            domainPromptSeed=(
+                str(domain_compatibility.get("domainPromptSeed"))
+                if domain_compatibility.get("domainPromptSeed")
+                else None
+            ),
             sourceDocumentTitles=[
                 str(item)
                 for item in (domain_compatibility.get("documentTitles") or [])
@@ -1119,6 +1133,7 @@ class TutorService:
             ],
             targetContentTypes=requested_types,
             renderHint=primary_hint,
+            courseType=course_type,
         )
 
     def _build_alignment_check_plan(
@@ -1499,8 +1514,9 @@ class TutorService:
         top_score = float(concepts[0].matchScore)
         if top_score < MIN_GROUNDED_MATCH_SCORE:
             return False, "low_concept_score"
-        if not evidence_passages:
-            return False, "no_evidence_passages"
+        # Evidence passages enrich content but are not required for grounding.
+        # The content service system prompt already handles the no-evidence case
+        # by generating from concept nodes and appending a provenance note.
         return True, "grounded"
 
     def _analysis_grounding_status(self, analysis: TutorAnalyzeResponse) -> tuple[bool, str]:

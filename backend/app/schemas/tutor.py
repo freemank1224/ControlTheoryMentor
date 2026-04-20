@@ -231,6 +231,10 @@ class TeachingContentRequest(BaseModel):
     )
     domainLabel: Optional[str] = Field(default=None, description="Detected domain label from graph + source preview")
     domainConfidence: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Domain detection confidence")
+    domainPromptSeed: Optional[str] = Field(
+        default=None,
+        description="Compact seed string (title, intro snippet, matched keywords) to anchor LLM system prompt to detected domain",
+    )
     sourceDocumentTitles: List[str] = Field(
         default_factory=list,
         description="Document title candidates extracted from source metadata",
@@ -246,6 +250,10 @@ class TeachingContentRequest(BaseModel):
     renderHint: ContentArtifactType = Field(
         default=ContentArtifactType.MARKDOWN,
         description="Primary content type that current consumers should prefer rendering first",
+    )
+    courseType: Optional[CourseType] = Field(
+        default=None,
+        description="Course track (knowledge_learning or problem_solving) to guide content generation strategy",
     )
 
 

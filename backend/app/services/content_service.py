@@ -19,7 +19,7 @@ from redis.exceptions import RedisError
 
 from app.db.redis import close_redis_client, get_redis_client
 from app.schemas.content import ContentArtifact, ContentArtifactStatus, ContentGenerationParams
-from app.schemas.tutor import ContentArtifactType, ContentRequestResponseMode, TeachingContentRequest
+from app.schemas.tutor import ContentArtifactType, ContentRequestResponseMode, CourseType, TeachingContentRequest
 
 
 class ContentStore(Protocol):
@@ -252,15 +252,8 @@ class ContentService:
         request: TeachingContentRequest,
         generation_params: ContentGenerationParams,
     ) -> tuple[str, dict[str, Any]]:
-        if not self._is_request_grounded(request):
-            return self._generate_insufficient_grounding_markdown(request), {
-                "source": "template",
-                "provider": "template",
-                "model": os.getenv("CONTENT_GENERATOR_VERSION", "v2"),
-                "llmAttempted": False,
-                "llmFallbackReason": "insufficient_grounding",
-            }
-
+        # Always attempt LLM first; template is only used as a last resort when LLM
+        # is not configured or the call fails.
         llm_text, llm_meta = self._generate_markdown_with_llm(request, generation_params)
         if llm_text:
             return llm_text, {
@@ -270,12 +263,24 @@ class ContentService:
                 "llmAttempted": bool(llm_meta.get("attempted")),
                 "llmFallbackReason": None,
             }
+
+        # LLM not configured or failed — fall back to template.
+        # If there truly is no grounding signal at all, use the insufficient-grounding message.
+        fallback_reason = llm_meta.get("error") or "llm_unavailable"
+        if not self._is_request_grounded(request):
+            return self._generate_insufficient_grounding_markdown(request), {
+                "source": "template",
+                "provider": "template",
+                "model": os.getenv("CONTENT_GENERATOR_VERSION", "v2"),
+                "llmAttempted": bool(llm_meta.get("attempted")),
+                "llmFallbackReason": fallback_reason,
+            }
         return self._generate_markdown_template(request, generation_params), {
             "source": "template",
             "provider": "template",
             "model": os.getenv("CONTENT_GENERATOR_VERSION", "v2"),
             "llmAttempted": bool(llm_meta.get("attempted")),
-            "llmFallbackReason": llm_meta.get("error"),
+            "llmFallbackReason": fallback_reason,
         }
 
     @staticmethod
@@ -397,16 +402,36 @@ class ContentService:
         domain_confidence = request.domainConfidence if request.domainConfidence is not None else 0.0
         source_titles = ", ".join(request.sourceDocumentTitles[:3]) if request.sourceDocumentTitles else "-"
         source_intro = " | ".join(request.sourceIntroPreview[:2]) if request.sourceIntroPreview else "-"
+        domain_prompt_seed = request.domainPromptSeed or ""
+
+        # Build a strong domain-anchored system prompt.
+        # When domain_label is known (not "general"), explicitly constrain the LLM persona and
+        # forbid drifting into unrelated domains (e.g., control theory when graph is biology).
+        if domain_label and domain_label != "general":
+            domain_anchor = (
+                f"你是 {domain_label} 领域的图谱证据驱动教学内容生成器。"
+                f"当前上传材料所属领域为 {domain_label}（置信度 {domain_confidence:.2f}）。"
+            )
+            if domain_prompt_seed:
+                domain_anchor += f"领域特征信号：{domain_prompt_seed}。"
+            domain_anchor += (
+                f"所有生成内容必须以 {domain_label} 领域的术语和视角讲解，"
+                "严禁引入与本次上传材料无关的其他领域知识。"
+            )
+        else:
+            domain_anchor = (
+                "你是图谱证据驱动的教学内容生成器，内容领域由上传材料决定。"
+            )
 
         system_prompt = (
-            "你是图谱证据驱动的教学内容生成器。输出高质量教学 Markdown。"
-            "要求：仅可基于用户问题、图谱概念和证据摘录生成内容；"
-            f"当前资料领域判定为 {domain_label}（置信度 {domain_confidence:.2f}）。"
-            "请优先使用该领域术语和表达风格。"
-            "如果信息不足或证据不足，必须明确指出并停止扩展。"
+            f"{domain_anchor}"
+            "输出高质量教学 Markdown。"
+            "要求：优先基于用户问题、图谱概念节点和证据摘录生成内容；"
+            "若无证据摘录，则基于概念节点和领域知识进行讲解，并在结尾简短注明'本节内容基于图谱节点生成，如需更精确讲解请补充原始文档'；"
             "禁止返回 JSON，禁止代码块包裹，直接输出 Markdown 正文。"
         )
-        user_prompt = (
+        # ── Common context header ──
+        _ctx = (
             f"stepTitle: {request.stepTitle}\n"
             f"objective: {request.objective}\n"
             f"question: {request.question}\n"
@@ -414,16 +439,110 @@ class ContentService:
             f"learnerLevel: {request.learnerLevel}\n"
             f"primaryConceptId: {request.primaryConceptId or '-'}\n"
             f"conceptIds: {', '.join(request.conceptIds[:8]) if request.conceptIds else '-'}\n"
-            f"evidencePassageIds: {', '.join(request.evidencePassageIds[:6]) if request.evidencePassageIds else '-'}\n"
             f"evidenceExcerpts: {' | '.join(request.evidenceExcerpts[:4]) if request.evidenceExcerpts else '-'}\n"
             f"sourceTitles: {source_titles}\n"
             f"sourceIntroPreview: {source_intro}\n"
             f"style: {generation_params.style}, detail: {generation_params.detail}, pace: {generation_params.pace}\n"
-            "\n请输出：\n"
-            "1) 标题\n2) 三到五个关键知识点\n3) 一个常见误区\n4) 一个微型练习题\n"
-            "若 evidenceExcerpts 为空或明显不足，请直接输出：信息不足：请确认上传材料与图谱是否一致。\n"
-            "篇幅控制在 220~420 中文字。"
         )
+
+        _course = getattr(request.courseType, "value", None) if request.courseType else "knowledge_learning"
+        _stage = request.stage.value if request.stage else "intro"
+
+        # ── problem_solving track ──
+        if _course == "problem_solving":
+            if _stage == "intro":
+                _instruction = (
+                    "\n请以以下格式输出（直接输出 Markdown，禁止 JSON 和代码块）：\n\n"
+                    "## 题目建模\n\n"
+                    "### 问题解读\n（2 句话说明这是什么类型的问题、最终要求什么量）\n\n"
+                    "### 已知量\n（以 Markdown 表格列出所有已知条件：| 符号 | 含义 | 单位/约束 |）\n\n"
+                    "### 未知量 / 目标量\n（明确列出需要求解的量）\n\n"
+                    "### 约束条件\n（逐条列出必须满足的约束与边界条件）\n\n"
+                    "### 求解路径概述\n（用 3-4 个编号步骤说明总体解题路线，不展开细节）\n\n"
+                    "篇幅 200-360 中文字。"
+                )
+            elif _stage == "checkpoint":
+                _instruction = (
+                    "\n请以以下格式输出（直接输出 Markdown，禁止 JSON 和代码块）：\n\n"
+                    "## 变量与约束核查\n\n"
+                    "### 变量清单\n（按 已知量 / 未知量 / 辅助量 分组列出，每个变量给出符号与含义）\n\n"
+                    "### 关键公式盘点\n（列出后续推导将用到的核心公式，每个公式用 $...$ 包裹并注明适用条件）\n\n"
+                    "### 容易遗漏的前提\n（列出 2-3 个求解此类题时易被忽略的前提或约束）\n\n"
+                    "> **进入推导前的自检清单**：请确认已知量完整、单位统一、目标量明确。\n\n"
+                    "篇幅 200-340 中文字。"
+                )
+            elif _stage == "practice":
+                _instruction = (
+                    "\n这是本次教学最核心的环节。请按以下格式输出完整的逐步推导过程（禁止 JSON 和代码块，直接输出 Markdown）：\n\n"
+                    "## 分步推导\n\n"
+                    "每个步骤必须包含：步骤名称、核心公式（$...$ 行内或 $$...$$ 块级）、"
+                    "推导逻辑说明 1-2 句、具体操作展开。\n\n"
+                    "模板：\n"
+                    "### 第 N 步：[步骤名]\n"
+                    "**核心公式**：$$...$$\n"
+                    "**推导逻辑**：（从上一步到这一步的因果关系，1-2 句）\n"
+                    "**操作**：（具体代入、变换、化简，每行一步）\n\n"
+                    "（重复以上模板直至推导完成）\n\n"
+                    "### 结果验证\n（如何验证推导结果的正确性，给出 1-2 个验证思路）\n\n"
+                    "### 关键公式汇总\n（列出本题所有关键公式，每个一行，用 $...$ 包裹）\n\n"
+                    "篇幅 320-600 中文字，步骤不得截断，公式必须完整写出。"
+                )
+            else:  # summary
+                _instruction = (
+                    "\n请以以下格式输出（直接输出 Markdown，禁止 JSON 和代码块）：\n\n"
+                    "## 解题模板\n\n"
+                    "### 解题框架（可复用步骤）\n（用编号列表抽象出本题通用解题步骤，至少 4 步）\n\n"
+                    "### 关键公式速查\n（列出本题核心公式，每个附一句适用场景说明，用 $...$ 包裹）\n\n"
+                    "### 易错点警告\n（列出 2-3 个本类型题最常见的错误及纠正方法）\n\n"
+                    "### 迁移提示\n（说明此解题框架可扩展到哪些变式题或相关主题）\n\n"
+                    "篇幅 200-360 中文字。"
+                )
+        else:  # knowledge_learning (default)
+            if _stage == "intro":
+                _instruction = (
+                    "\n请以以下格式输出（直接输出 Markdown，禁止 JSON 和代码块）：\n\n"
+                    "## 背景建立与学习目标\n\n"
+                    "### 问题解读\n（2-3 句话说明这个问题属于什么领域、问的是什么、为什么重要）\n\n"
+                    "### 本节核心概念\n（列出 3-5 个将要深入讲解的核心概念，格式：**概念名**：一句话说明它是什么）\n\n"
+                    "### 学习路线图\n（简述本次学习的 4 个步骤，让用户了解接下来的学习历程）\n\n"
+                    "篇幅 180-320 中文字。"
+                )
+            elif _stage == "concept":
+                _instruction = (
+                    "\n请对核心概念逐一进行深度讲解（2-4 个概念）。"
+                    "每个概念必须包含以下全部要素（缺一不可）：\n\n"
+                    "格式模板：\n"
+                    "### 概念 N：[概念名]\n"
+                    "**定义**：（精确的 1-2 句话定义，使用领域专业术语）\n"
+                    "**公式**：（如有对应公式，用 $...$ 包裹写出；若无，写'本概念无对应公式'）\n"
+                    "**直觉类比**：（1 句话，用日常场景或简单物理现象类比）\n"
+                    "**结构说明**：（1-2 句话描述此概念的内部结构或工作流程，Mermaid 图将从旁补充可视化）\n"
+                    "> **🤔 理解检查**：（提出一个只有真正理解才能回答的具体问题，要求分析或推断，不能是定义复述）\n\n"
+                    "（所有概念讲完后无需总结段落，直接结束）\n\n"
+                    "篇幅 300-520 中文字，每个概念篇幅均衡。"
+                )
+            elif _stage in ("practice", "checkpoint"):
+                _instruction = (
+                    "\n请设计一个具体的迁移应用场景，直接输出以下格式（Markdown，禁止 JSON）：\n\n"
+                    "## 应用迁移\n\n"
+                    "### 场景描述\n（给出一个具体的工程或现实情境，2-3 句话，场景必须真实可信）\n\n"
+                    "### 应用任务\n（明确说明用户需要完成什么分析或判断，任务要和本节概念直接相关）\n\n"
+                    "### 分析提示\n（给出 3-4 个分步分析提示，引导思考，但不直接给出答案）\n\n"
+                    "### 参考思路\n（给出解题思路轮廓，包含关键公式或逻辑步骤，不给完整答案）\n\n"
+                    "> **互动问题**：（提出一个需要用户具体操作或推理的 checkpoint 问题）\n\n"
+                    "篇幅 220-400 中文字。"
+                )
+            else:  # summary
+                _instruction = (
+                    "\n请以以下格式输出（直接输出 Markdown，禁止 JSON 和代码块）：\n\n"
+                    "## 本节核心收获\n\n"
+                    "### 关键知识点总结\n（3-5 个要点，每个 1-2 句话，包含对应公式符号（用 $...$）或核心关系）\n\n"
+                    "### 常见误区\n（列出 1-2 个该主题下学习者最常犯的认知错误，并给出正确理解）\n\n"
+                    "### 下一步学习建议\n（给出 2-3 个具体的后续探索方向，引导持续学习）\n\n"
+                    "篇幅 200-360 中文字。"
+                )
+
+        user_prompt = _ctx + _instruction
 
         try:
             if "/anthropic" in base_url.lower():
@@ -513,8 +632,35 @@ class ContentService:
 
     @staticmethod
     def _generate_latex(request: TeachingContentRequest) -> str:
-        if "pid" in request.question.lower() or "control" in request.question.lower():
+        """Generate a domain-appropriate standalone LaTeX formula for the current step."""
+        _course = getattr(request.courseType, "value", None) if request.courseType else "knowledge_learning"
+        question_lower = request.question.lower()
+        domain = (request.domainLabel or "").lower()
+        concepts = " ".join(request.conceptIds[:5]).lower() if request.conceptIds else ""
+
+        # Control / PID domain
+        if any(kw in question_lower or kw in concepts for kw in ("pid", "积分", "微分", "controller", "控制器")):
             return r"u(t)=K_p e(t)+K_i\int_{0}^{t}e(\tau)\,d\tau+K_d\frac{de(t)}{dt}"
+        if any(kw in question_lower for kw in ("传递函数", "transfer function", "laplace", "拉普拉斯")):
+            return r"G(s)=\frac{Y(s)}{U(s)}=\frac{b_m s^m+\cdots+b_0}{a_n s^n+\cdots+a_0}"
+        if any(kw in question_lower for kw in ("bode", "频率响应", "frequency response", "幅值", "相位")):
+            return r"|G(j\omega)|_{\mathrm{dB}}=20\log_{10}|G(j\omega)|,\quad \angle G(j\omega)=\arg G(j\omega)"
+        if any(kw in question_lower for kw in ("状态空间", "state space", "state-space")):
+            return r"\dot{\mathbf{x}}=A\mathbf{x}+B\mathbf{u},\quad \mathbf{y}=C\mathbf{x}+D\mathbf{u}"
+        if any(kw in question_lower for kw in ("稳定", "stability", "lyapunov", "routh", "nyquist")):
+            return r"\mathrm{Re}(\lambda_i(A))<0 \iff \text{系统渐近稳定}"
+        if any(kw in question_lower for kw in ("阶跃响应", "step response", "超调", "overshoot", "settling")):
+            return r"M_p=e^{-\pi\zeta/\sqrt{1-\zeta^2}}\times 100\%,\quad t_s\approx\frac{4}{\zeta\omega_n}"
+        # Physical / mechanical
+        if any(kw in domain for kw in ("物理", "physics", "力学", "mechanics", "动力学")):
+            return r"m\ddot{x}+c\dot{x}+kx=F(t)"
+        # Electrical
+        if any(kw in domain for kw in ("电路", "circuit", "电子", "electronics")):
+            return r"V=IR,\quad P=\frac{V^2}{R}=I^2 R"
+        # Problem-solving generic: use a cleaner placeholder than y=f(x)
+        if _course == "problem_solving":
+            primary = request.primaryConceptId or "x"
+            return rf"f({primary})=\text{{目标量}}"
         return r"y = f(x)"
 
     @staticmethod
@@ -523,11 +669,55 @@ class ContentService:
         interactive_mode: str | None,
         generation_params: ContentGenerationParams,
     ) -> dict[str, Any]:
+        _course = getattr(request.courseType, "value", None) if request.courseType else "knowledge_learning"
+        _stage = request.stage.value if request.stage else "intro"
+        mode = interactive_mode or "guided"
+
+        if _course == "problem_solving":
+            if _stage == "checkpoint":
+                prompt = (
+                    f"请列出：① 已知量（至少 2 个，写出符号与含义）② 未知量/目标量 ③ 关键约束条件（至少 1 个）。"
+                    f"主题：{request.stepTitle}"
+                )
+                expected = "structured-list"
+                mode = "variable_inventory"
+            elif _stage == "practice":
+                prompt = (
+                    f"请写出第一步的核心公式，并说明从题目条件到这一步的推导逻辑（1-2 句话）。"
+                    f"主题：{request.stepTitle}"
+                )
+                expected = "formula-and-reasoning"
+                mode = "derivation_step"
+            else:
+                prompt = f"根据 {request.stepTitle} 的解题模板，你会如何处理一道相似的变式题？请描述你的解题思路。"
+                expected = "short-text"
+                mode = "template_transfer"
+        else:  # knowledge_learning
+            if _stage == "concept":
+                concept = request.primaryConceptId or request.stepTitle
+                prompt = (
+                    f"请用自己的话解释：{concept} 在本次问题中扮演什么角色？"
+                    f"并给出一个你认为最能体现其核心作用的应用场景（1-2 句话）。"
+                )
+                expected = "short-text"
+                mode = "concept_check"
+            elif _stage in ("practice", "checkpoint"):
+                prompt = (
+                    f"根据上面的场景描述，请完成以下任务：{request.stepTitle}。"
+                    f"写出你的分析思路（重点是思路，不需要完整答案）。"
+                )
+                expected = "analytical-response"
+                mode = "transfer_apply"
+            else:
+                prompt = f"学完本节后，请用一句话总结 {request.stepTitle} 的核心要点。"
+                expected = "short-text"
+                mode = "reflection"
+
         return {
-            "mode": interactive_mode or "guided",
-            "status": "placeholder",
-            "prompt": f"围绕 {request.stepTitle} 进行交互式练习。",
-            "expectedResponse": "short-text",
+            "mode": mode,
+            "status": "ready",
+            "prompt": prompt,
+            "expectedResponse": expected,
             "params": generation_params.model_dump(mode="json"),
         }
 
