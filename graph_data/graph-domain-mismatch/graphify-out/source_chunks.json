@@ -1,0 +1,12 @@
+{
+  "chunks": [
+    {
+      "chunk_id": "bio-1",
+      "source_file": "raw/biology.pdf",
+      "source_location": "Chapter 1",
+      "page_start": 1,
+      "page_end": 1,
+      "text": "A cell membrane is a biological membrane that separates the interior of all cells from the outside environment."
+    }
+  ]
+}

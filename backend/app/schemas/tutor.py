@@ -229,6 +229,16 @@ class TeachingContentRequest(BaseModel):
         default_factory=list,
         description="Sentence-level evidence excerpts used to ground generated content",
     )
+    domainLabel: Optional[str] = Field(default=None, description="Detected domain label from graph + source preview")
+    domainConfidence: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Domain detection confidence")
+    sourceDocumentTitles: List[str] = Field(
+        default_factory=list,
+        description="Document title candidates extracted from source metadata",
+    )
+    sourceIntroPreview: List[str] = Field(
+        default_factory=list,
+        description="Preview snippets extracted from the first pages of source documents",
+    )
     targetContentTypes: List[ContentArtifactType] = Field(
         default_factory=lambda: [ContentArtifactType.MARKDOWN],
         description="Requested artifact kinds for downstream content generation",
@@ -383,6 +393,10 @@ class TutorSessionStartRequest(BaseModel):
     learnerId: Optional[str] = Field(default=None, description="Optional learner identifier for progress tracking")
     mode: TutorMode = Field(default=TutorMode.INTERACTIVE, description="Desired tutoring mode")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Optional learning context")
+    domainStrict: Optional[bool] = Field(
+        default=None,
+        description="Optional per-session strict domain gate override",
+    )
     courseTypeStrategy: CourseTypeStrategy = Field(
         default=CourseTypeStrategy.AUTO,
         description="Course type selection strategy: auto/manual/override",

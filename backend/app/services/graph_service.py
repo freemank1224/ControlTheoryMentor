@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -11,6 +12,115 @@ from neo4j.exceptions import Neo4jError, ServiceUnavailable
 
 from app.config import settings
 from app.db.neo4j import get_driver
+
+
+DOMAIN_KEYWORD_PROFILES: dict[str, set[str]] = {
+    "control_theory": {
+        "control",
+        "controller",
+        "feedback",
+        "pid",
+        "plant",
+        "stability",
+        "transfer function",
+        "state space",
+        "bode",
+        "nyquist",
+        "root locus",
+        "gain margin",
+        "phase margin",
+        "controllability",
+        "observability",
+        "laplace",
+        "控制",
+        "控制器",
+        "反馈",
+        "传递函数",
+        "稳定性",
+        "状态空间",
+        "伯德",
+        "奈奎斯特",
+        "根轨迹",
+        "可控性",
+        "可观性",
+        "拉普拉斯",
+    },
+    "biology": {
+        "cell",
+        "membrane",
+        "nucleus",
+        "protein",
+        "dna",
+        "rna",
+        "enzyme",
+        "gene",
+        "biology",
+        "biological",
+        "细胞",
+        "细胞膜",
+        "细胞核",
+        "蛋白质",
+        "基因",
+        "酶",
+        "生物",
+    },
+    "computer_science": {
+        "algorithm",
+        "complexity",
+        "database",
+        "network",
+        "compiler",
+        "machine learning",
+        "model",
+        "python",
+        "java",
+        "programming",
+        "计算机",
+        "算法",
+        "数据库",
+        "网络",
+        "编译",
+        "程序",
+    },
+    "economics": {
+        "market",
+        "demand",
+        "supply",
+        "inflation",
+        "gdp",
+        "utility",
+        "equilibrium",
+        "cost",
+        "revenue",
+        "economics",
+        "经济",
+        "市场",
+        "供给",
+        "需求",
+        "通货膨胀",
+        "均衡",
+    },
+    "mathematics": {
+        "theorem",
+        "proof",
+        "lemma",
+        "integral",
+        "derivative",
+        "matrix",
+        "vector",
+        "equation",
+        "algebra",
+        "geometry",
+        "数学",
+        "定理",
+        "证明",
+        "引理",
+        "积分",
+        "导数",
+        "矩阵",
+        "向量",
+    },
+}
 
 
 class GraphServiceError(RuntimeError):
@@ -83,6 +193,7 @@ class GraphService:
     def get_graph_view(self, graph_id: str) -> dict[str, Any]:
         """Return a Cytoscape-compatible graph view for the frontend graph panel."""
         snapshot = self.get_graph_snapshot(graph_id)
+        domain_compatibility = self._build_domain_compatibility(snapshot)
         nodes = [
             {
                 "data": {
@@ -120,8 +231,14 @@ class GraphService:
                 "reportPath": snapshot.report_path,
                 "sourceChunksPath": snapshot.source_chunks_path,
                 "source": snapshot.source,
+                "domainCompatibility": domain_compatibility,
             },
         }
+
+    def get_graph_domain_compatibility(self, graph_id: str) -> dict[str, Any]:
+        """Return domain compatibility based on loaded graph content only."""
+        snapshot = self.get_graph_snapshot(graph_id)
+        return self._build_domain_compatibility(snapshot)
 
     def get_node(self, graph_id: str, node_id: str) -> tuple[GraphSnapshot, dict[str, Any]]:
         """Return a normalized node from a graph snapshot."""
@@ -275,6 +392,151 @@ class GraphService:
     def _read_json(file_path: Path) -> dict[str, Any]:
         with open(file_path, "r", encoding="utf-8") as file_handle:
             return json.load(file_handle)
+
+    def _build_domain_compatibility(self, snapshot: GraphSnapshot) -> dict[str, Any]:
+        expected_domain = (settings.TUTOR_SYSTEM_DOMAIN or "").strip().lower()
+        source_preview = self._extract_source_preview(snapshot)
+        detection = self._detect_domain(snapshot, source_preview)
+
+        if expected_domain in {"", "general", "any", "auto", "none"}:
+            return {
+                "expectedDomain": expected_domain or "general",
+                "detectedDomain": detection["domainLabel"],
+                "compatible": True,
+                "reason": "no_domain_constraint",
+                "strict": bool(settings.TUTOR_DOMAIN_STRICT),
+                "confidence": detection["confidence"],
+                "matchedKeywords": detection["matchedKeywords"],
+                "signalCount": detection["signalCount"],
+                "documentTitles": source_preview["documentTitles"],
+                "introPreview": source_preview["introPreview"],
+                "domainPromptSeed": detection["domainPromptSeed"],
+            }
+
+        if expected_domain in DOMAIN_KEYWORD_PROFILES:
+            threshold = max(int(settings.TUTOR_DOMAIN_MATCH_MIN_KEYWORDS), 1)
+            domain_match = detection["domainLabel"] == expected_domain
+            signal_count = int(detection["signalCount"])
+            compatible = domain_match and signal_count >= threshold
+            return {
+                "expectedDomain": expected_domain,
+                "detectedDomain": detection["domainLabel"],
+                "compatible": compatible,
+                "reason": "domain_match" if compatible else "domain_mismatch",
+                "strict": bool(settings.TUTOR_DOMAIN_STRICT),
+                "confidence": detection["confidence"],
+                "matchedKeywords": detection["matchedKeywords"],
+                "signalCount": signal_count,
+                "minSignalRequired": threshold,
+                "documentTitles": source_preview["documentTitles"],
+                "introPreview": source_preview["introPreview"],
+                "domainPromptSeed": detection["domainPromptSeed"],
+            }
+
+        return {
+            "expectedDomain": expected_domain,
+            "detectedDomain": detection["domainLabel"],
+            "compatible": True,
+            "reason": "unsupported_expected_domain_profile",
+            "strict": bool(settings.TUTOR_DOMAIN_STRICT),
+            "confidence": detection["confidence"],
+            "matchedKeywords": detection["matchedKeywords"],
+            "signalCount": detection["signalCount"],
+            "documentTitles": source_preview["documentTitles"],
+            "introPreview": source_preview["introPreview"],
+            "domainPromptSeed": detection["domainPromptSeed"],
+        }
+
+    def _extract_source_preview(self, snapshot: GraphSnapshot) -> dict[str, list[str]]:
+        titles: list[str] = []
+        title_seen: set[str] = set()
+
+        for node in snapshot.nodes_by_id.values():
+            raw_source = str(node.get("sourceFile") or "").strip()
+            if not raw_source:
+                continue
+            title = Path(raw_source).stem
+            title = re.sub(r"[_\-]+", " ", title).strip()
+            if not title:
+                continue
+            key = title.lower()
+            if key in title_seen:
+                continue
+            title_seen.add(key)
+            titles.append(title)
+            if len(titles) >= 4:
+                break
+
+        intro_candidates: list[tuple[int, str]] = []
+        fallback_intro: list[str] = []
+        for chunk in snapshot.source_chunks[:120]:
+            text = str(chunk.get("text") or "").strip()
+            if not text:
+                continue
+            short_text = re.sub(r"\s+", " ", text)[:220]
+            page_start = chunk.get("page_start")
+            if isinstance(page_start, int) and page_start <= 3:
+                intro_candidates.append((page_start, short_text))
+            elif len(fallback_intro) < 3:
+                fallback_intro.append(short_text)
+
+        intro_candidates.sort(key=lambda item: item[0])
+        intro_preview = [item[1] for item in intro_candidates[:3]]
+        if not intro_preview:
+            intro_preview = fallback_intro[:3]
+
+        return {
+            "documentTitles": titles,
+            "introPreview": intro_preview,
+        }
+
+    def _detect_domain(self, snapshot: GraphSnapshot, source_preview: dict[str, list[str]]) -> dict[str, Any]:
+        corpus_parts: list[str] = []
+        corpus_parts.extend(source_preview.get("documentTitles", []))
+        corpus_parts.extend(source_preview.get("introPreview", []))
+
+        for node in snapshot.nodes_by_id.values():
+            corpus_parts.append(str(node.get("label") or ""))
+            corpus_parts.append(str(node.get("id") or ""))
+        for edge in snapshot.edges[:300]:
+            corpus_parts.append(str(edge.get("relation") or ""))
+        for chunk in snapshot.source_chunks[:40]:
+            corpus_parts.append(str(chunk.get("text") or "")[:400])
+
+        corpus = "\n".join(corpus_parts).lower()
+        best_domain = "general"
+        best_score = 0
+        best_keywords: list[str] = []
+
+        for domain, keywords in DOMAIN_KEYWORD_PROFILES.items():
+            matched = sorted([keyword for keyword in keywords if keyword in corpus])
+            score = len(matched)
+            if score > best_score:
+                best_score = score
+                best_domain = domain
+                best_keywords = matched
+
+        confidence = 0.0
+        if best_score > 0:
+            confidence = min(1.0, best_score / 6.0)
+
+        prompt_seed_parts: list[str] = []
+        titles = source_preview.get("documentTitles", [])
+        intro = source_preview.get("introPreview", [])
+        if titles:
+            prompt_seed_parts.append(f"title={titles[0]}")
+        if intro:
+            prompt_seed_parts.append(f"intro={intro[0][:120]}")
+        if best_keywords:
+            prompt_seed_parts.append(f"keywords={', '.join(best_keywords[:6])}")
+
+        return {
+            "domainLabel": best_domain if best_score > 0 else "general",
+            "confidence": round(confidence, 3),
+            "matchedKeywords": best_keywords[:12],
+            "signalCount": best_score,
+            "domainPromptSeed": " | ".join(prompt_seed_parts),
+        }
 
 
 def get_graph_service() -> GraphService:

@@ -35,6 +35,27 @@
   color: var(--text-secondary);
 }
 
+.tutor-page__domain-status {
+  grid-column: 1 / -1;
+  margin-top: -0.2rem;
+  padding: 0.48rem 0.62rem;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  font-size: 0.84rem;
+}
+
+.tutor-page__domain-status--ok {
+  background: #e9f7ea;
+  border-color: #acd7b0;
+  color: #1d5b25;
+}
+
+.tutor-page__domain-status--warn {
+  background: #fff3df;
+  border-color: #f0cf97;
+  color: #7a4a0d;
+}
+
 .tutor-page__advanced {
   grid-column: 1 / -1;
   border: 1px dashed var(--border-cream);
@@ -54,6 +75,19 @@
   margin-top: 0.55rem;
   display: grid;
   gap: 0.5rem;
+}
+
+.tutor-page__toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+}
+
+.tutor-page__toggle-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
 }
 
 .tutor-page__input,

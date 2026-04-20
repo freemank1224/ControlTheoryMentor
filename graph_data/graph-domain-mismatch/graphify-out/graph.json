@@ -1,0 +1,28 @@
+{
+  "nodes": [
+    {
+      "id": "bio_cell",
+      "label": "Cell Membrane",
+      "file_type": "paper",
+      "source_file": "raw/biology.pdf",
+      "source_location": "Chapter 1",
+      "community": 1
+    },
+    {
+      "id": "bio_nucleus",
+      "label": "Nucleus",
+      "file_type": "paper",
+      "source_file": "raw/biology.pdf",
+      "source_location": "Chapter 1",
+      "community": 1
+    }
+  ],
+  "links": [
+    {
+      "source": "bio_cell",
+      "target": "bio_nucleus",
+      "relation": "contains",
+      "confidence": "EXTRACTED"
+    }
+  ]
+}

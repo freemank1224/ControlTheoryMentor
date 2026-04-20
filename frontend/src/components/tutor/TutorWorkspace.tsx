@@ -9,6 +9,7 @@ import { KnowledgeGraph } from '../graph/KnowledgeGraph';
 import type {
   ContentArtifact,
   FeedbackDifficulty,
+  GraphDomainCompatibility,
   LearningProgress,
   TeachingStep,
   TutorSessionResponse,
@@ -60,10 +61,14 @@ export function TutorWorkspace() {
   const [searchParams] = useSearchParams();
   const queryGraphId = searchParams.get('graphId') || '';
   const storedGraphId = window.localStorage.getItem('latestGraphId') || '';
+  const storedDomainStrict = window.localStorage.getItem('tutorDomainStrict');
   const initialGraphId = queryGraphId || DEFAULT_TUTOR_GRAPH_ID || storedGraphId;
 
   const [question, setQuestion] = useState('');
   const [graphId, setGraphId] = useState(initialGraphId);
+  const [domainStrict, setDomainStrict] = useState(
+    storedDomainStrict === null ? true : storedDomainStrict === 'true',
+  );
   const [learnerId, setLearnerId] = useState('');
   const [session, setSession] = useState<TutorSessionResponse | null>(null);
   const [responseText, setResponseText] = useState('');
@@ -101,6 +106,13 @@ export function TutorWorkspace() {
     return pendingReviewFromSession;
   }, [learningProgress, pendingReviewFromSession]);
   const { data: graphData, loading: graphLoading, error: graphError } = useKnowledgeGraph(graphIdForView);
+  const graphDomainCompatibility = useMemo<GraphDomainCompatibility | null>(() => {
+    return graphData?.metadata?.domainCompatibility ?? null;
+  }, [graphData]);
+  const graphDomainMismatch = Boolean(
+    graphDomainCompatibility && !graphDomainCompatibility.compatible,
+  );
+  const graphDomainMismatchBlocked = domainStrict && graphDomainMismatch;
 
   useEffect(() => {
     if (queryGraphId && queryGraphId !== graphId) {
@@ -113,6 +125,10 @@ export function TutorWorkspace() {
       window.localStorage.setItem('latestGraphId', graphId);
     }
   }, [graphId]);
+
+  useEffect(() => {
+    window.localStorage.setItem('tutorDomainStrict', String(domainStrict));
+  }, [domainStrict]);
 
   const refreshLearningProgress = async (
     targetSession: TutorSessionResponse | null,
@@ -129,6 +145,10 @@ export function TutorWorkspace() {
 
   const startSession = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (graphDomainMismatchBlocked) {
+      setError('当前图谱与导师系统领域配置不一致，请先切换图谱后再开始会话。');
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -136,11 +156,13 @@ export function TutorWorkspace() {
       if (normalizedLearnerId) {
         context.learnerId = normalizedLearnerId;
       }
+      context.domain_strict = domainStrict;
       const result = await apiClient.startTutorSession({
         question,
         pdfId: graphId,
         learnerId: normalizedLearnerId || undefined,
         mode: 'interactive',
+        domainStrict,
         context,
         courseTypeStrategy: 'auto',
       });
@@ -333,10 +355,36 @@ export function TutorWorkspace() {
           placeholder="输入学习问题"
           required
         />
-        <button className="tutor-page__button" type="submit" disabled={loading}>
+        <button className="tutor-page__button" type="submit" disabled={loading || graphDomainMismatchBlocked}>
           {loading ? '处理中...' : '生成课程'}
         </button>
         <div className="tutor-page__helper">当前图谱: {graphId || '未选择'}</div>
+        {graphDomainCompatibility && (
+          <div
+            className={
+              graphDomainCompatibility.compatible
+                ? 'tutor-page__domain-status tutor-page__domain-status--ok'
+                : 'tutor-page__domain-status tutor-page__domain-status--warn'
+            }
+          >
+            <strong>图谱领域检查:</strong>
+            {' '}期望 {graphDomainCompatibility.expectedDomain}
+            {' '}| 检测 {graphDomainCompatibility.detectedDomain}
+            {' '}| 兼容 {graphDomainCompatibility.compatible ? '是' : '否'}
+            {typeof graphDomainCompatibility.signalCount === 'number' && (
+              <>
+                {' '}| 信号 {graphDomainCompatibility.signalCount}
+              </>
+            )}
+          </div>
+        )}
+        {graphDomainMismatch && (
+          <div className="tutor-page__error">
+            {domainStrict
+              ? '当前图谱与系统导师领域不一致。Strict 模式下请先切换到匹配图谱，再开始提问。'
+              : '当前图谱与系统导师领域不一致。非 Strict 模式下系统会先用图谱与原文前几页做领域识别，再自动对齐提示词。'}
+          </div>
+        )}
 
         <details className="tutor-page__advanced">
           <summary>高级设置（可选）</summary>
@@ -354,6 +402,18 @@ export function TutorWorkspace() {
               onChange={(event) => setLearnerId(event.target.value)}
               placeholder="learner id (用于学习闭环)"
             />
+            <label className="tutor-page__toggle-row" htmlFor="domain-strict-toggle">
+              <input
+                id="domain-strict-toggle"
+                type="checkbox"
+                checked={domainStrict}
+                onChange={(event) => setDomainStrict(event.target.checked)}
+              />
+              <span>
+                strict 领域门控
+                {domainStrict ? '（不匹配即拦截）' : '（不匹配时自动对齐领域提示词）'}
+              </span>
+            </label>
             <button
               className="tutor-page__button tutor-page__button--ghost"
               type="button"

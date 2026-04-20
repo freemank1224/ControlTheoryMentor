@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from app.config import settings
 from app.schemas.learning import LearningEventType, LearningProgress, LearningTrackRequest
 from app.services.content_service import ContentService, get_content_service
 from app.schemas.tutor import (
@@ -42,6 +43,7 @@ from app.services.course_type_classifier import classify_course_type, resolve_co
 from app.services.learning_service import LearningService, get_learning_service
 from app.services.node_service import NodeService, get_node_service
 from app.services.session_service import SessionService, get_session_service
+from app.services.graph_service import GraphNotFoundError
 
 STOPWORDS = {
     "a",
@@ -62,6 +64,8 @@ STOPWORDS = {
     "would",
 }
 
+MIN_GROUNDED_MATCH_SCORE = 0.45
+
 
 class TutorService:
     """Graph-grounded tutor orchestration and session persistence."""
@@ -79,6 +83,7 @@ class TutorService:
         self.learning_service = learning_service or get_learning_service()
 
     def analyze_question(self, request: TutorAnalyzeRequest) -> TutorAnalyzeResponse:
+        domain_compatibility = self._safe_graph_domain_compatibility(request.pdfId)
         auto_decision = self.classify_course_type(request.question, request.context)
         final_decision = self._resolve_course_type_decision(
             auto_decision,
@@ -109,7 +114,15 @@ class TutorService:
         evidence_passages.sort(key=lambda passage: passage.score, reverse=True)
         evidence_passages = evidence_passages[: request.limit]
         primary_concept = concepts[0].node.id if concepts else None
-        summary = self._build_analysis_summary(request.question, concepts, evidence_passages, learning_progress)
+        grounded, grounding_reason = self._grounding_status(concepts, evidence_passages)
+        summary = self._build_analysis_summary(
+            request.question,
+            concepts,
+            evidence_passages,
+            learning_progress,
+            grounded=grounded,
+            grounding_reason=grounding_reason,
+        )
 
         suggested_session = {
             "mode": request.mode,
@@ -118,6 +131,9 @@ class TutorService:
             "finalCourseType": final_decision.decision.value,
             "autoDecision": auto_decision.model_dump(mode="json"),
             "courseTypeStrategy": request.courseTypeStrategy.value,
+            "groundingStatus": "grounded" if grounded else "insufficient",
+            "groundingReason": grounding_reason,
+            "graphDomainCompatibility": domain_compatibility,
         }
         if request.courseTypeOverride is not None:
             suggested_session["courseTypeOverride"] = request.courseTypeOverride.value
@@ -139,10 +155,18 @@ class TutorService:
                 "courseTypeDecision": final_decision.model_dump(mode="json"),
                 "courseTypeStrategy": request.courseTypeStrategy.value,
                 "courseTypeOverride": request.courseTypeOverride.value if request.courseTypeOverride else None,
+                "groundingStatus": "grounded" if grounded else "insufficient",
+                "groundingReason": grounding_reason,
+                "graphDomainCompatibility": domain_compatibility,
             },
         )
 
     def start_session(self, request: TutorSessionStartRequest) -> TutorSessionResponse:
+        domain_compatibility = self._safe_graph_domain_compatibility(request.pdfId)
+        domain_strict = self._resolve_domain_strict(request)
+        if domain_strict and not bool(domain_compatibility.get("compatible", True)):
+            return self._start_domain_mismatch_session(request, domain_compatibility, domain_strict=domain_strict)
+
         auto_decision = self.classify_course_type(request.question, request.context)
         final_decision = self._resolve_course_type_decision(
             auto_decision,
@@ -183,6 +207,8 @@ class TutorService:
             "learnerId": learner_id,
             "mode": request.mode.value,
             "context": request.context or {},
+            "domainStrict": domain_strict,
+            "graphDomainCompatibility": domain_compatibility,
             "analysis": analysis.model_dump(mode="json"),
             "learningSnapshot": personalization,
             "courseType": final_decision.decision.value,
@@ -408,6 +434,8 @@ class TutorService:
                 "question": session["question"],
                 "learnerId": session.get("learnerId"),
                 "mode": session["mode"],
+                "domainStrict": session.get("domainStrict", bool(settings.TUTOR_DOMAIN_STRICT)),
+                "graphDomainCompatibility": session.get("graphDomainCompatibility"),
                 "topics": session.get("topics", []),
                 "totalSteps": len(plan.steps),
                 "createdAt": session.get("createdAt"),
@@ -423,6 +451,116 @@ class TutorService:
                 "courseTypeOverride": session.get("courseTypeOverride"),
             },
         )
+
+    def _start_domain_mismatch_session(
+        self,
+        request: TutorSessionStartRequest,
+        domain_compatibility: dict[str, Any],
+        *,
+        domain_strict: bool,
+    ) -> TutorSessionResponse:
+        learner_id = self._resolve_learner_id(request.learnerId, request.context)
+        now = self._utc_now_iso()
+        session_id = f"session-{uuid.uuid4()}"
+        expected_domain = str(domain_compatibility.get("expectedDomain") or "configured")
+        detected_domain = str(domain_compatibility.get("detectedDomain") or "unknown")
+
+        step = TeachingStep(
+            id="step-1",
+            type=TeachingStepType.INTRO,
+            title="图谱领域检查",
+            objective="先确认图谱领域与导师系统配置一致，再继续学习流程。",
+            modalityPlan=self._build_modality_plan(
+                primary=ContentArtifactType.MARKDOWN,
+                secondary=[],
+                requires_response=False,
+                interaction_mode="graph_domain_check",
+                rationale="graph_loaded_but_domain_mismatch",
+            ),
+            content={
+                "markdown": (
+                    f"当前图谱领域与系统配置不一致：期望领域 {expected_domain}，"
+                    f"检测领域 {detected_domain}。请先切换到匹配图谱再开始提问。"
+                ),
+                "nextActions": [
+                    "回到教材管理，确认本次上传是否是目标领域材料",
+                    "切换到正确 graphId 后重新发起会话",
+                    "如需跨领域使用，请调整后端 TUTOR_SYSTEM_DOMAIN 配置",
+                ],
+            },
+            relatedTopics=[],
+            requiresResponse=False,
+        )
+        plan = TeachingPlan(
+            summary="图谱已加载，但领域与导师系统配置不一致。",
+            goals=[
+                "在开始提问前完成领域一致性确认",
+                "避免生成与系统设定冲突的课程内容",
+            ],
+            steps=[step],
+            planFinalized=True,
+        )
+        self._hydrate_plan_content_artifacts(plan)
+
+        session = {
+            "id": session_id,
+            "question": request.question,
+            "pdfId": request.pdfId,
+            "learnerId": learner_id,
+            "mode": request.mode.value,
+            "context": request.context or {},
+            "domainStrict": domain_strict,
+            "graphDomainCompatibility": domain_compatibility,
+            "analysis": {
+                "graphId": request.pdfId,
+                "question": request.question,
+                "summary": "graph_domain_mismatch",
+                "relevantConcepts": [],
+                "highlightedNodeIds": [],
+                "evidencePassages": [],
+                "suggestedSession": {},
+                "metadata": {
+                    "graphDomainCompatibility": domain_compatibility,
+                    "domainStatus": "mismatch",
+                },
+            },
+            "learningSnapshot": {},
+            "courseType": CourseType.KNOWLEDGE_LEARNING.value,
+            "courseTypeStrategy": request.courseTypeStrategy.value,
+            "courseTypeOverride": request.courseTypeOverride.value if request.courseTypeOverride else None,
+            "autoCourseTypeDecision": CourseTypeDecision(
+                decision=CourseType.KNOWLEDGE_LEARNING,
+                confidence=1.0,
+                signals=["domain_mismatch_guard"],
+                overridden=False,
+            ).model_dump(mode="json"),
+            "courseTypeDecision": CourseTypeDecision(
+                decision=CourseType.KNOWLEDGE_LEARNING,
+                confidence=1.0,
+                signals=["domain_mismatch_guard"],
+                overridden=False,
+            ).model_dump(mode="json"),
+            "topics": [],
+            "plan": plan.model_dump(mode="json"),
+            "messages": [
+                TutorMessage(
+                    role=MessageType.SYSTEM,
+                    content="Tutor session paused due to graph domain mismatch.",
+                    metadata={
+                        "event": "graph_domain_mismatch",
+                        "pdfId": request.pdfId,
+                        "graphDomainCompatibility": domain_compatibility,
+                    },
+                ).model_dump(mode="json")
+            ],
+            "currentStepIndex": -1,
+            "status": TutorSessionStatus.READY.value,
+            "awaitingResponse": False,
+            "createdAt": now,
+            "updatedAt": now,
+        }
+        self.session_service.save_session(session)
+        return self._build_session_response(session)
 
     def classify_course_type(self, question: str, context: dict[str, Any] | None = None) -> CourseTypeDecision:
         """Rule-based classifier with deterministic output used by analyze/start."""
@@ -500,6 +638,16 @@ class TutorService:
         course_type: CourseType,
         personalization: dict[str, Any] | None = None,
     ) -> TeachingPlan:
+        grounded, grounding_reason = self._analysis_grounding_status(analysis)
+        if not grounded:
+            return self._build_alignment_check_plan(
+                question=question,
+                mode=mode,
+                analysis=analysis,
+                context=context,
+                grounding_reason=grounding_reason,
+            )
+
         if course_type == CourseType.PROBLEM_SOLVING:
             return self._build_problem_solving_plan(
                 question=question,
@@ -525,7 +673,7 @@ class TutorService:
         context: dict[str, Any],
         personalization: dict[str, Any] | None = None,
     ) -> TeachingPlan:
-        primary_label = analysis.relevantConcepts[0].node.label if analysis.relevantConcepts else "control theory"
+        primary_label = analysis.relevantConcepts[0].node.label if analysis.relevantConcepts else "当前主题"
         learner_level = str(context.get("learning_level", "intermediate"))
         evidence = [passage.model_dump(mode="json") for passage in analysis.evidencePassages[:2]]
         highlights = analysis.highlightedNodeIds[:4]
@@ -600,7 +748,7 @@ class TutorService:
                 checkpointSpec=self._build_checkpoint_spec(
                     step_id="step-2",
                     kind="concept_check",
-                    prompt=f"请你用自己的话解释 {primary_label} 在控制系统中的作用。",
+                    prompt=f"请你用自己的话解释 {primary_label} 在当前主题中的作用。",
                     expected_evidence=[
                         "提及核心概念作用",
                         "给出一个约束或边界条件",
@@ -608,7 +756,7 @@ class TutorService:
                 ),
                 content={
                     "markdown": f"现在拆解 {primary_label} 的核心作用、前置知识和常见误区，并用原文证据支撑关键说法。",
-                    "guidingQuestion": f"请你用自己的话解释 {primary_label} 在控制系统中的作用。",
+                    "guidingQuestion": f"请你用自己的话解释 {primary_label} 在当前主题中的作用。",
                     "graphHighlights": highlights,
                     "evidencePassages": evidence,
                     "contentRequest": self._build_content_request(
@@ -704,7 +852,7 @@ class TutorService:
             goals=[
                 f"识别 {primary_label} 的核心作用",
                 "能够引用教材证据复述关键概念",
-                "把概念迁移到具体控制场景中使用",
+                "把概念迁移到具体问题场景中使用",
                 f"优先补强薄弱概念：{weak_focus}" if weak_focus else "记录并回顾当前未稳固概念",
             ],
             steps=steps,
@@ -720,7 +868,7 @@ class TutorService:
         context: dict[str, Any],
         personalization: dict[str, Any] | None = None,
     ) -> TeachingPlan:
-        primary_label = analysis.relevantConcepts[0].node.label if analysis.relevantConcepts else "control theory"
+        primary_label = analysis.relevantConcepts[0].node.label if analysis.relevantConcepts else "当前主题"
         learner_level = str(context.get("learning_level", "intermediate"))
         highlights = analysis.highlightedNodeIds[:4]
         evidence = [passage.model_dump(mode="json") for passage in analysis.evidencePassages[:3]]
@@ -924,6 +1072,12 @@ class TutorService:
     ) -> TeachingContentRequest:
         requested_types = target_content_types or [ContentArtifactType.MARKDOWN]
         primary_hint = render_hint or requested_types[0]
+        domain_compatibility = {}
+        if isinstance(analysis.metadata, dict):
+            maybe_compat = analysis.metadata.get("graphDomainCompatibility")
+            if isinstance(maybe_compat, dict):
+                domain_compatibility = maybe_compat
+
         return TeachingContentRequest(
             stage=stage,
             stepId=step_id,
@@ -942,8 +1096,98 @@ class TutorService:
             conceptIds=[concept.node.id for concept in analysis.relevantConcepts],
             highlightedNodeIds=analysis.highlightedNodeIds,
             evidencePassageIds=[passage.chunkId for passage in analysis.evidencePassages[:3]],
+            evidenceExcerpts=[passage.excerpt for passage in analysis.evidencePassages[:3]],
+            domainLabel=(
+                str(domain_compatibility.get("detectedDomain"))
+                if domain_compatibility.get("detectedDomain")
+                else None
+            ),
+            domainConfidence=(
+                float(domain_compatibility.get("confidence"))
+                if isinstance(domain_compatibility.get("confidence"), (int, float))
+                else None
+            ),
+            sourceDocumentTitles=[
+                str(item)
+                for item in (domain_compatibility.get("documentTitles") or [])
+                if isinstance(item, str)
+            ],
+            sourceIntroPreview=[
+                str(item)
+                for item in (domain_compatibility.get("introPreview") or [])
+                if isinstance(item, str)
+            ],
             targetContentTypes=requested_types,
             renderHint=primary_hint,
+        )
+
+    def _build_alignment_check_plan(
+        self,
+        *,
+        question: str,
+        mode: TutorMode,
+        analysis: TutorAnalyzeResponse,
+        context: dict[str, Any],
+        grounding_reason: str,
+    ) -> TeachingPlan:
+        learner_level = str(context.get("learning_level", "intermediate"))
+        highlights = analysis.highlightedNodeIds[:4]
+        warning_modality = self._build_modality_plan(
+            primary=ContentArtifactType.MARKDOWN,
+            secondary=[],
+            requires_response=False,
+            interaction_mode="alignment_check",
+            rationale="insufficient_graph_grounding_requires_user_confirmation",
+        )
+
+        warning_message = (
+            "当前问题与已选图谱未形成稳定对齐，系统暂不生成具体课程内容。"
+            "请先确认是否选中了正确的上传材料（graphId / pdfId），"
+            "或重新提问并补充更明确的领域关键词。"
+        )
+
+        step = TeachingStep(
+            id="step-1",
+            type=TeachingStepType.INTRO,
+            title="图谱与问题对齐检查",
+            objective="先确认问题、图谱和原文证据是否一致，再进入正式教学。",
+            modalityPlan=warning_modality,
+            content={
+                "markdown": warning_message,
+                "nextActions": [
+                    "确认当前会话使用的 graphId 是否来自本次上传材料",
+                    "如果选错图谱，切换到正确图谱后重新发起会话",
+                    "在问题中加入材料里的核心术语，再次发起问题",
+                ],
+                "graphHighlights": highlights,
+                "evidencePassages": [passage.model_dump(mode="json") for passage in analysis.evidencePassages[:2]],
+                "contentRequest": self._build_content_request(
+                    TeachingStepType.INTRO,
+                    analysis,
+                    learner_level,
+                    question=question,
+                    mode=mode,
+                    step_id="step-1",
+                    step_title="图谱与问题对齐检查",
+                    objective="先确认问题、图谱和原文证据是否一致，再进入正式教学。",
+                    requires_response=False,
+                    target_content_types=[ContentArtifactType.MARKDOWN],
+                    render_hint=ContentArtifactType.MARKDOWN,
+                ),
+            },
+            relatedTopics=[concept.node.id for concept in analysis.relevantConcepts],
+            requiresResponse=False,
+        )
+
+        return TeachingPlan(
+            summary=f"问题“{question}”当前证据对齐不足，已进入对齐检查流程。",
+            goals=[
+                "明确当前问题是否属于所选图谱材料",
+                "确认 graphId / pdfId 与上传材料一致",
+                "避免在证据不足时生成自相矛盾内容",
+            ],
+            steps=[step],
+            planFinalized=True,
         )
 
     @staticmethod
@@ -1144,7 +1388,22 @@ class TutorService:
         concepts: list[TutorAnalyzeConcept],
         evidence_passages: list[TutorEvidencePassage],
         learning_progress: LearningProgress | None = None,
+        *,
+        grounded: bool,
+        grounding_reason: str,
     ) -> str:
+        if not grounded:
+            if not concepts:
+                return (
+                    f"未在图谱中稳定匹配到与“{question}”直接对应的概念。"
+                    "请确认当前选择的是正确上传材料，并补充更明确的主题关键词后重试。"
+                )
+            primary = concepts[0].node.label
+            return (
+                f"问题“{question}”目前只得到弱匹配（主概念候选：{primary}，原因：{grounding_reason}），"
+                "证据不足以支持稳定教学内容。请先确认图谱与问题是否属于同一材料域。"
+            )
+
         if not concepts:
             return f"未在图谱中稳定匹配到与“{question}”直接对应的概念，建议先降级到全文搜索或人工指定章节。"
         primary = concepts[0].node.label
@@ -1179,8 +1438,73 @@ class TutorService:
 
     def _build_completion_message(self, session: dict[str, Any]) -> str:
         topics = session.get("topics", [])
-        primary_topic = topics[0] if topics else "control theory"
+        primary_topic = topics[0] if topics else "当前主题"
         return f"本轮关于 {primary_topic} 的教学会话已经完成。你现在可以回到知识图谱继续追踪相关节点，或者围绕同一主题发起下一轮更深入的问题。"
+
+    def _safe_graph_domain_compatibility(self, graph_id: str) -> dict[str, Any]:
+        graph_service = getattr(self.node_service, "graph_service", None)
+        if graph_service is None or not hasattr(graph_service, "get_graph_domain_compatibility"):
+            return {
+                "expectedDomain": settings.TUTOR_SYSTEM_DOMAIN,
+                "detectedDomain": "unknown",
+                "compatible": True,
+                "reason": "domain_check_unavailable",
+                "strict": bool(settings.TUTOR_DOMAIN_STRICT),
+                "confidence": 0.0,
+                "matchedKeywords": [],
+                "signalCount": 0,
+                "documentTitles": [],
+                "introPreview": [],
+                "domainPromptSeed": "",
+            }
+
+        try:
+            return graph_service.get_graph_domain_compatibility(graph_id)
+        except GraphNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception:
+            return {
+                "expectedDomain": settings.TUTOR_SYSTEM_DOMAIN,
+                "detectedDomain": "unknown",
+                "compatible": True,
+                "reason": "domain_check_error_fallback",
+                "strict": bool(settings.TUTOR_DOMAIN_STRICT),
+                "confidence": 0.0,
+                "matchedKeywords": [],
+                "signalCount": 0,
+                "documentTitles": [],
+                "introPreview": [],
+                "domainPromptSeed": "",
+            }
+
+    def _resolve_domain_strict(self, request: TutorSessionStartRequest) -> bool:
+        if request.domainStrict is not None:
+            return bool(request.domainStrict)
+
+        context = request.context if isinstance(request.context, dict) else {}
+        if context:
+            for key in ("domainStrict", "domain_strict"):
+                if key in context:
+                    return bool(context.get(key))
+
+        return bool(settings.TUTOR_DOMAIN_STRICT)
+
+    @staticmethod
+    def _grounding_status(
+        concepts: list[TutorAnalyzeConcept],
+        evidence_passages: list[TutorEvidencePassage],
+    ) -> tuple[bool, str]:
+        if not concepts:
+            return False, "no_concept_match"
+        top_score = float(concepts[0].matchScore)
+        if top_score < MIN_GROUNDED_MATCH_SCORE:
+            return False, "low_concept_score"
+        if not evidence_passages:
+            return False, "no_evidence_passages"
+        return True, "grounded"
+
+    def _analysis_grounding_status(self, analysis: TutorAnalyzeResponse) -> tuple[bool, str]:
+        return self._grounding_status(analysis.relevantConcepts, analysis.evidencePassages)
 
     def _append_message(self, session: dict[str, Any], role: MessageType, content: str, metadata: dict[str, Any]) -> None:
         session.setdefault("messages", []).append(

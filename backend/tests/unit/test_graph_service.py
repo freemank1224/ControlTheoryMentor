@@ -77,6 +77,8 @@ class TestGraphService:
         assert response["metadata"]["total_nodes"] == 2
         assert response["metadata"]["total_edges"] == 1
         assert response["elements"]["nodes"][0]["data"]["label"] == "PID Controller"
+        assert response["metadata"]["domainCompatibility"]["expectedDomain"] == "control_theory"
+        assert response["metadata"]["domainCompatibility"]["compatible"] is True
 
     def test_get_graph_snapshot_falls_back_to_legacy_json(self, tmp_path: Path):
         graph_id = "legacy-graph"
@@ -101,3 +103,28 @@ class TestGraphService:
         assert snapshot.source == "legacy"
         assert "node-1" in snapshot.nodes_by_id
         assert snapshot.edges[0]["relation"] == "related_to"
+
+    def test_get_graph_domain_compatibility_flags_non_control_graph(self, tmp_path: Path):
+        graph_id = "graph-other-domain"
+        graph_dir = tmp_path / graph_id / "graphify-out"
+        graph_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "nodes": [
+                {
+                    "id": "concept_biology",
+                    "label": "Cell Membrane",
+                    "file_type": "paper",
+                    "source_file": "raw/biology.pdf",
+                    "source_location": "Chapter 1",
+                }
+            ],
+            "links": [],
+        }
+        (graph_dir / "graph.json").write_text(json.dumps(payload), encoding="utf-8")
+
+        service = GraphService(artifacts_root=tmp_path)
+        compatibility = service.get_graph_domain_compatibility(graph_id)
+
+        assert compatibility["expectedDomain"] == "control_theory"
+        assert compatibility["compatible"] is False
+        assert compatibility["reason"] == "domain_mismatch"

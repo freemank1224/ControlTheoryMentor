@@ -52,7 +52,23 @@ export interface GraphDataResponse {
     total_nodes?: number;
     total_edges?: number;
     reportPath?: string;
+    domainCompatibility?: GraphDomainCompatibility;
   };
+}
+
+export interface GraphDomainCompatibility {
+  expectedDomain: string;
+  detectedDomain: string;
+  compatible: boolean;
+  reason: string;
+  strict: boolean;
+  confidence: number;
+  matchedKeywords?: string[];
+  signalCount?: number;
+  minSignalRequired?: number;
+  documentTitles?: string[];
+  introPreview?: string[];
+  domainPromptSeed?: string;
 }
 
 export interface TutorSessionStart {
@@ -60,6 +76,7 @@ export interface TutorSessionStart {
   pdfId: string;
   learnerId?: string;
   mode?: TutorMode;
+  domainStrict?: boolean;
   context?: Record<string, unknown>;
   courseTypeStrategy?: CourseTypeStrategy;
   courseTypeOverride?: CourseType;
@@ -161,6 +178,11 @@ export interface TeachingContentRequest {
   conceptIds: string[];
   highlightedNodeIds: string[];
   evidencePassageIds: string[];
+  evidenceExcerpts?: string[];
+  domainLabel?: string | null;
+  domainConfidence?: number | null;
+  sourceDocumentTitles?: string[];
+  sourceIntroPreview?: string[];
   targetContentTypes: ContentArtifactType[];
   renderHint: ContentArtifactType;
 }

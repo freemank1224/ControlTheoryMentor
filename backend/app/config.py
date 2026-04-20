@@ -20,4 +20,9 @@ class Settings(BaseSettings):
     MAX_UPLOAD_FILE_SIZE_MB: int = 1024
     MAX_PDF_PAGES: int = 1200
 
+    # Tutor domain guard
+    TUTOR_SYSTEM_DOMAIN: str = "control_theory"
+    TUTOR_DOMAIN_MATCH_MIN_KEYWORDS: int = 3
+    TUTOR_DOMAIN_STRICT: bool = False
+
 settings = Settings()

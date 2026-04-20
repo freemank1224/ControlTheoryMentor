@@ -12,6 +12,7 @@ from app.schemas.tutor import (
     TutorAnalyzeResponse,
     TutorEvidencePassage,
     TutorMode,
+    TutorSessionStartRequest,
 )
 from app.services.session_service import InMemorySessionStore, SessionService
 from app.services.tutor_service import TutorService
@@ -274,3 +275,102 @@ def test_legacy_session_is_backfilled_for_course_type_and_plan_contract():
     assert persisted["courseType"] in {"knowledge_learning", "problem_solving"}
     assert persisted["plan"]["planFinalized"] is True
     assert "modalityPlan" in persisted["plan"]["steps"][0]
+
+
+def test_insufficient_grounding_uses_alignment_check_plan():
+    service = _build_service()
+    analysis = TutorAnalyzeResponse(
+        graphId="graph-task-123",
+        question="这是什么",
+        summary="",
+        relevantConcepts=[],
+        highlightedNodeIds=[],
+        evidencePassages=[],
+        suggestedSession={},
+        metadata={},
+    )
+
+    plan = service._build_teaching_plan(
+        question="这是什么",
+        mode=TutorMode.INTERACTIVE,
+        analysis=analysis,
+        context={"learning_level": "beginner"},
+        course_type=CourseType.KNOWLEDGE_LEARNING,
+        personalization=None,
+    )
+
+    assert plan.summary.startswith("问题“这是什么”当前证据对齐不足")
+    assert len(plan.steps) == 1
+    assert plan.steps[0].title == "图谱与问题对齐检查"
+    assert plan.steps[0].requiresResponse is False
+    assert "暂不生成具体课程内容" in (plan.steps[0].content.markdown or "")
+
+
+def test_start_session_blocks_mismatch_when_domain_strict_enabled():
+    service = _build_service()
+
+    service._safe_graph_domain_compatibility = lambda _graph_id: {
+        "expectedDomain": "control_theory",
+        "detectedDomain": "biology",
+        "compatible": False,
+        "reason": "domain_mismatch",
+        "strict": True,
+        "confidence": 0.9,
+        "matchedKeywords": ["cell"],
+        "signalCount": 4,
+        "documentTitles": ["biology"],
+        "introPreview": ["cell membrane"],
+        "domainPromptSeed": "title=biology",
+    }
+
+    request = TutorSessionStartRequest(
+        question="讲一下细胞膜",
+        pdfId="graph-domain-mismatch",
+        mode=TutorMode.INTERACTIVE,
+        domainStrict=True,
+    )
+
+    response = service.start_session(request)
+
+    assert response.plan.summary.startswith("图谱已加载，但领域与导师系统配置不一致")
+    assert response.plan.steps[0].title == "图谱领域检查"
+    assert response.metadata["domainStrict"] is True
+
+
+def test_start_session_allows_mismatch_when_domain_strict_disabled():
+    service = _build_service()
+
+    service._safe_graph_domain_compatibility = lambda _graph_id: {
+        "expectedDomain": "control_theory",
+        "detectedDomain": "biology",
+        "compatible": False,
+        "reason": "domain_mismatch",
+        "strict": False,
+        "confidence": 0.9,
+        "matchedKeywords": ["cell"],
+        "signalCount": 4,
+        "documentTitles": ["biology"],
+        "introPreview": ["cell membrane"],
+        "domainPromptSeed": "title=biology",
+    }
+    service.analyze_question = lambda _req: _build_analysis()
+    service._build_teaching_plan = lambda *_args, **_kwargs: TeachingPlan(
+        summary="non-strict plan",
+        goals=["goal"],
+        steps=[],
+        planFinalized=True,
+    )
+    service._hydrate_plan_content_artifacts = lambda _plan: None
+
+    request = TutorSessionStartRequest(
+        question="讲一下细胞膜",
+        pdfId="graph-domain-mismatch",
+        mode=TutorMode.INTERACTIVE,
+        domainStrict=False,
+    )
+
+    response = service.start_session(request)
+
+    assert response.plan.summary == "non-strict plan"
+    assert response.metadata["domainStrict"] is False
+    assert response.metadata["graphDomainCompatibility"]["compatible"] is False

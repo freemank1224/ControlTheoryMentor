@@ -237,6 +237,10 @@ class ContentService:
                 "llmAttempted": markdown_meta.get("llmAttempted"),
                 "llmFallbackReason": markdown_meta.get("llmFallbackReason"),
                 "responseMode": request.responseMode,
+                "domainLabel": request.domainLabel,
+                "domainConfidence": request.domainConfidence,
+                "sourceDocumentTitles": request.sourceDocumentTitles,
+                "sourceIntroPreview": request.sourceIntroPreview,
                 "generationParams": generation_params.model_dump(mode="json"),
                 "imageGeneration": image_generation_meta,
                 "store": self.backend_name,
@@ -248,6 +252,15 @@ class ContentService:
         request: TeachingContentRequest,
         generation_params: ContentGenerationParams,
     ) -> tuple[str, dict[str, Any]]:
+        if not self._is_request_grounded(request):
+            return self._generate_insufficient_grounding_markdown(request), {
+                "source": "template",
+                "provider": "template",
+                "model": os.getenv("CONTENT_GENERATOR_VERSION", "v2"),
+                "llmAttempted": False,
+                "llmFallbackReason": "insufficient_grounding",
+            }
+
         llm_text, llm_meta = self._generate_markdown_with_llm(request, generation_params)
         if llm_text:
             return llm_text, {
@@ -285,6 +298,12 @@ class ContentService:
             lines.append(f"- Related Concepts: {', '.join(request.conceptIds[:5])}")
         if request.evidencePassageIds:
             lines.append(f"- Evidence Anchors: {', '.join(request.evidencePassageIds[:3])}")
+        if request.evidenceExcerpts:
+            lines.append(f"- Evidence Excerpts: {len(request.evidenceExcerpts)}")
+        if request.domainLabel:
+            lines.append(f"- Detected Domain: {request.domainLabel}")
+        if request.sourceDocumentTitles:
+            lines.append(f"- Source Titles: {', '.join(request.sourceDocumentTitles[:2])}")
 
         lines.extend(
             [
@@ -294,16 +313,49 @@ class ContentService:
             ]
         )
 
+        if request.sourceIntroPreview:
+            lines.extend(["", "### Source Intro Preview"])
+            for snippet in request.sourceIntroPreview[:2]:
+                lines.append(f"- {snippet}")
+
+        if request.evidenceExcerpts:
+            lines.extend(["", "### Grounding Evidence"])
+            for excerpt in request.evidenceExcerpts[:3]:
+                lines.append(f"- {excerpt}")
+
         if request.responseMode == ContentRequestResponseMode.INTERACTIVE:
             lines.extend(
                 [
                     "",
                     "### Checkpoint",
-                    "请先用 2-3 句话复述核心概念，再给出一个你会使用该概念的控制场景。",
+                    "请先用 2-3 句话复述核心概念，再给出一个你会使用该概念的具体场景。",
                 ]
             )
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _generate_insufficient_grounding_markdown(request: TeachingContentRequest) -> str:
+        lines = [
+            f"## {request.stepTitle}",
+            "",
+            "信息不足：当前问题未与图谱证据形成稳定对齐，系统暂停生成具体课程内容。",
+            "",
+            "### 建议操作",
+            "- 确认当前会话使用的 graphId/pdfId 是否对应本次上传材料",
+            "- 在问题中加入材料里的核心术语后重试",
+            "- 若仍无法对齐，请重新上传或切换到正确图谱",
+            "",
+            "### Learner Question",
+            request.question,
+        ]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _is_request_grounded(request: TeachingContentRequest) -> bool:
+        has_concept = bool(request.primaryConceptId or request.conceptIds)
+        has_evidence = bool(request.evidenceExcerpts)
+        return has_concept and has_evidence
 
     def _generate_markdown_with_llm(
         self,
@@ -341,9 +393,17 @@ class ContentService:
             meta["error"] = "missing_api_key_or_model"
             return None, meta
 
+        domain_label = request.domainLabel or "general"
+        domain_confidence = request.domainConfidence if request.domainConfidence is not None else 0.0
+        source_titles = ", ".join(request.sourceDocumentTitles[:3]) if request.sourceDocumentTitles else "-"
+        source_intro = " | ".join(request.sourceIntroPreview[:2]) if request.sourceIntroPreview else "-"
+
         system_prompt = (
-            "你是控制理论导师内容生成器。输出高质量教学 Markdown。"
-            "要求：基于问题和图谱概念，给出结构化讲解、关键点、误区提醒和一个小练习。"
+            "你是图谱证据驱动的教学内容生成器。输出高质量教学 Markdown。"
+            "要求：仅可基于用户问题、图谱概念和证据摘录生成内容；"
+            f"当前资料领域判定为 {domain_label}（置信度 {domain_confidence:.2f}）。"
+            "请优先使用该领域术语和表达风格。"
+            "如果信息不足或证据不足，必须明确指出并停止扩展。"
             "禁止返回 JSON，禁止代码块包裹，直接输出 Markdown 正文。"
         )
         user_prompt = (
@@ -355,9 +415,13 @@ class ContentService:
             f"primaryConceptId: {request.primaryConceptId or '-'}\n"
             f"conceptIds: {', '.join(request.conceptIds[:8]) if request.conceptIds else '-'}\n"
             f"evidencePassageIds: {', '.join(request.evidencePassageIds[:6]) if request.evidencePassageIds else '-'}\n"
+            f"evidenceExcerpts: {' | '.join(request.evidenceExcerpts[:4]) if request.evidenceExcerpts else '-'}\n"
+            f"sourceTitles: {source_titles}\n"
+            f"sourceIntroPreview: {source_intro}\n"
             f"style: {generation_params.style}, detail: {generation_params.detail}, pace: {generation_params.pace}\n"
             "\n请输出：\n"
             "1) 标题\n2) 三到五个关键知识点\n3) 一个常见误区\n4) 一个微型练习题\n"
+            "若 evidenceExcerpts 为空或明显不足，请直接输出：信息不足：请确认上传材料与图谱是否一致。\n"
             "篇幅控制在 220~420 中文字。"
         )
 
@@ -451,7 +515,7 @@ class ContentService:
     def _generate_latex(request: TeachingContentRequest) -> str:
         if "pid" in request.question.lower() or "control" in request.question.lower():
             return r"u(t)=K_p e(t)+K_i\int_{0}^{t}e(\tau)\,d\tau+K_d\frac{de(t)}{dt}"
-        return r"e(t)=r(t)-y(t)"
+        return r"y = f(x)"
 
     @staticmethod
     def _generate_interactive_payload(
@@ -499,7 +563,7 @@ class ContentService:
         return (
             f"{request.stepTitle}. {request.objective}. "
             f"style={generation_params.style}; detail={generation_params.detail}; pace={generation_params.pace}; "
-            f"concept={request.primaryConceptId or 'control-theory'}"
+            f"concept={request.primaryConceptId or 'topic'}"
         )
 
     @staticmethod
