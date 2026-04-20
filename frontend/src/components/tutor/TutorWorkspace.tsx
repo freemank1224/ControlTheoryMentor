@@ -56,10 +56,12 @@ export function TutorWorkspace() {
   const [searchParams] = useSearchParams();
   const queryGraphId = searchParams.get('graphId') || '';
   const storedGraphId = window.localStorage.getItem('latestGraphId') || '';
+  const storedStrictMode = window.localStorage.getItem('tutorStrictMode');
   const initialGraphId = queryGraphId || DEFAULT_TUTOR_GRAPH_ID || storedGraphId;
 
   const [question, setQuestion] = useState('');
   const [graphId, setGraphId] = useState(initialGraphId);
+  const [strictMode, setStrictMode] = useState(storedStrictMode === null ? true : storedStrictMode === 'true');
   const [session, setSession] = useState<TutorSessionResponse | null>(null);
   const [responseText, setResponseText] = useState('');
   const [responseConfidence, setResponseConfidence] = useState('medium');
@@ -93,7 +95,7 @@ export function TutorWorkspace() {
   const graphDomainMismatch = Boolean(
     graphDomainCompatibility && !graphDomainCompatibility.compatible,
   );
-  const graphDomainMismatchBlocked = graphDomainMismatch;
+  const graphDomainMismatchBlocked = strictMode && graphDomainMismatch;
   const completedStageCount = generationStages.filter((stage) => stage.status === 'done').length;
   const activeStage = generationStages.find((stage) => stage.status === 'active') ?? null;
 
@@ -108,6 +110,10 @@ export function TutorWorkspace() {
       window.localStorage.setItem('latestGraphId', graphId);
     }
   }, [graphId]);
+
+  useEffect(() => {
+    window.localStorage.setItem('tutorStrictMode', String(strictMode));
+  }, [strictMode]);
 
   useEffect(() => {
     if (subtitleFeedRef.current) {
@@ -166,6 +172,7 @@ export function TutorWorkspace() {
         question,
         pdfId: graphId,
         mode: 'interactive',
+        domainStrict: strictMode,
         context: { learning_level: 'intermediate' },
         courseTypeStrategy: 'auto',
       });
@@ -287,6 +294,18 @@ export function TutorWorkspace() {
           {loading ? '处理中...' : '生成课程'}
         </button>
         <div className="tutor-page__helper">当前资料编号: {graphId || '未选择'}</div>
+        <label className="tutor-page__toggle-row" htmlFor="strict-mode-toggle">
+          <input
+            id="strict-mode-toggle"
+            type="checkbox"
+            checked={strictMode}
+            onChange={(event) => setStrictMode(event.target.checked)}
+          />
+          <span>
+            strict 模式
+            {strictMode ? '（只接受控制理论相关资料）' : '（允许继续并自动对齐上传资料领域）'}
+          </span>
+        </label>
         {graphDomainCompatibility?.compatible && (
           <div className="tutor-page__domain-status tutor-page__domain-status--ok">
             资料检查通过：当前上传 PDF 与控制理论课程方向相关。
@@ -294,7 +313,9 @@ export function TutorWorkspace() {
         )}
         {graphDomainMismatch && (
           <div className="tutor-page__domain-status tutor-page__domain-status--warn">
-            当前你上传的 PDF 与预设的控制理论课程不相关，请上传控制理论相关资料后再生成课程。
+            {strictMode
+              ? '当前你上传的 PDF 与预设的控制理论课程不相关，请上传控制理论相关资料后再生成课程。'
+              : '当前你上传的 PDF 与预设控制理论不一致，但已允许继续生成，系统会自动按资料方向调整课程内容。'}
           </div>
         )}
       </form>
