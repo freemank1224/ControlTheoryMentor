@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { apiClient } from '../../services/api';
@@ -8,9 +8,7 @@ import { ContentRenderer } from '../content/ContentRenderer';
 import { KnowledgeGraph } from '../graph/KnowledgeGraph';
 import type {
   ContentArtifact,
-  FeedbackDifficulty,
   GraphDomainCompatibility,
-  LearningProgress,
   TeachingStep,
   TutorSessionResponse,
 } from '../../types/api';
@@ -18,6 +16,23 @@ import type {
 import './TutorWorkspace.css';
 
 const DEFAULT_TUTOR_GRAPH_ID = import.meta.env.VITE_DEFAULT_GRAPH_ID || '';
+const GENERATION_STAGE_LABELS = [
+  '检查上传资料',
+  '理解学习目标',
+  '规划课程结构',
+  '生成第一节内容',
+] as const;
+
+type GenerationStageStatus = 'pending' | 'active' | 'done' | 'error';
+
+interface GenerationStage {
+  label: string;
+  status: GenerationStageStatus;
+}
+
+function buildInitialGenerationStages(): GenerationStage[] {
+  return GENERATION_STAGE_LABELS.map((label) => ({ label, status: 'pending' }));
+}
 
 function messageRoleLabel(role: string): string {
   if (role === 'assistant') {
@@ -37,50 +52,24 @@ function currentGraphId(session: TutorSessionResponse | null, fallbackGraphId: s
   return fallbackGraphId;
 }
 
-function normalizeLearnerId(value: string): string {
-  return value.trim();
-}
-
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === 'string');
-}
-
-function sessionPendingReview(session: TutorSessionResponse | null): string[] {
-  const snapshot = session?.metadata?.learningSnapshot;
-  if (!snapshot || typeof snapshot !== 'object') {
-    return [];
-  }
-  const pending = (snapshot as Record<string, unknown>).pendingReviewConceptIds;
-  return toStringArray(pending);
-}
-
 export function TutorWorkspace() {
   const [searchParams] = useSearchParams();
   const queryGraphId = searchParams.get('graphId') || '';
   const storedGraphId = window.localStorage.getItem('latestGraphId') || '';
-  const storedDomainStrict = window.localStorage.getItem('tutorDomainStrict');
   const initialGraphId = queryGraphId || DEFAULT_TUTOR_GRAPH_ID || storedGraphId;
 
   const [question, setQuestion] = useState('');
   const [graphId, setGraphId] = useState(initialGraphId);
-  const [domainStrict, setDomainStrict] = useState(
-    storedDomainStrict === null ? true : storedDomainStrict === 'true',
-  );
-  const [learnerId, setLearnerId] = useState('');
   const [session, setSession] = useState<TutorSessionResponse | null>(null);
   const [responseText, setResponseText] = useState('');
   const [responseConfidence, setResponseConfidence] = useState('medium');
-  const [feedbackRating, setFeedbackRating] = useState(4);
-  const [feedbackDifficulty, setFeedbackDifficulty] = useState<FeedbackDifficulty>('appropriate');
-  const [feedbackComment, setFeedbackComment] = useState('');
   const [overrideArtifact, setOverrideArtifact] = useState<ContentArtifact | null>(null);
-  const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
-  const [latestTrackedStepKey, setLatestTrackedStepKey] = useState<string | null>(null);
+  const [generationStages, setGenerationStages] = useState<GenerationStage[]>(buildInitialGenerationStages());
+  const [subtitleLines, setSubtitleLines] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const subtitleFeedRef = useRef<HTMLDivElement | null>(null);
+  const activeStageRef = useRef<number>(0);
 
   const activeStep = session?.currentStep ?? null;
   const contentId = activeStep?.content?.contentArtifactId ?? null;
@@ -93,18 +82,10 @@ export function TutorWorkspace() {
   const displayedArtifact = overrideArtifact ?? artifact;
 
   const graphIdForView = currentGraphId(session, graphId);
-  const normalizedLearnerId = normalizeLearnerId(learnerId);
   const highlightedNodes = useMemo(
     () => activeStep?.content?.graphHighlights ?? [],
     [activeStep],
   );
-  const pendingReviewFromSession = useMemo(() => sessionPendingReview(session), [session]);
-  const pendingReviewConcepts = useMemo(() => {
-    if (learningProgress?.pendingReviewConceptIds.length) {
-      return learningProgress.pendingReviewConceptIds;
-    }
-    return pendingReviewFromSession;
-  }, [learningProgress, pendingReviewFromSession]);
   const { data: graphData, loading: graphLoading, error: graphError } = useKnowledgeGraph(graphIdForView);
   const graphDomainCompatibility = useMemo<GraphDomainCompatibility | null>(() => {
     return graphData?.metadata?.domainCompatibility ?? null;
@@ -112,7 +93,9 @@ export function TutorWorkspace() {
   const graphDomainMismatch = Boolean(
     graphDomainCompatibility && !graphDomainCompatibility.compatible,
   );
-  const graphDomainMismatchBlocked = domainStrict && graphDomainMismatch;
+  const graphDomainMismatchBlocked = graphDomainMismatch;
+  const completedStageCount = generationStages.filter((stage) => stage.status === 'done').length;
+  const activeStage = generationStages.find((stage) => stage.status === 'active') ?? null;
 
   useEffect(() => {
     if (queryGraphId && queryGraphId !== graphId) {
@@ -127,52 +110,79 @@ export function TutorWorkspace() {
   }, [graphId]);
 
   useEffect(() => {
-    window.localStorage.setItem('tutorDomainStrict', String(domainStrict));
-  }, [domainStrict]);
-
-  const refreshLearningProgress = async (
-    targetSession: TutorSessionResponse | null,
-    explicitGraphId?: string,
-  ) => {
-    if (!normalizedLearnerId) {
-      setLearningProgress(null);
-      return;
+    if (subtitleFeedRef.current) {
+      subtitleFeedRef.current.scrollTop = subtitleFeedRef.current.scrollHeight;
     }
-    const targetGraphId = explicitGraphId ?? currentGraphId(targetSession, graphId);
-    const result = await apiClient.getLearningProgress(normalizedLearnerId, targetGraphId);
-    setLearningProgress(result.progress);
+  }, [subtitleLines]);
+
+  const appendSubtitleLine = (stageIndex: number, line: string) => {
+    const prefix = stageIndex >= 0
+      ? `【${stageIndex + 1}/${GENERATION_STAGE_LABELS.length}】 `
+      : '';
+    setSubtitleLines((previous) => [...previous, `${prefix}${line}`].slice(-24));
+  };
+
+  const resetGenerationProgress = () => {
+    setGenerationStages(buildInitialGenerationStages());
+    setSubtitleLines([]);
+    activeStageRef.current = 0;
+  };
+
+  const updateStageStatus = (stageIndex: number, status: GenerationStageStatus, line?: string) => {
+    setGenerationStages((previous) => {
+      const next = [...previous];
+      if (next[stageIndex]) {
+        next[stageIndex] = {
+          ...next[stageIndex],
+          status,
+        };
+      }
+      return next;
+    });
+    if (status === 'active') {
+      activeStageRef.current = stageIndex;
+    }
+    if (line) {
+      appendSubtitleLine(stageIndex, line);
+    }
   };
 
   const startSession = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    resetGenerationProgress();
     if (graphDomainMismatchBlocked) {
-      setError('当前图谱与导师系统领域配置不一致，请先切换图谱后再开始会话。');
+      setError('当前你上传的 PDF 与预设的控制理论课程不相关，请先上传控制理论相关资料。');
+      updateStageStatus(0, 'error', '检测到上传资料与控制理论课程不相关，请更换资料后重试。');
       return;
     }
     try {
       setLoading(true);
       setError(null);
-      const context: Record<string, unknown> = { learning_level: 'intermediate' };
-      if (normalizedLearnerId) {
-        context.learnerId = normalizedLearnerId;
-      }
-      context.domain_strict = domainStrict;
+      updateStageStatus(0, 'active', '正在检查上传资料是否可用于控制理论课程...');
+      updateStageStatus(0, 'done', '资料检查通过。');
+
+      updateStageStatus(1, 'active', '正在理解你的学习目标...');
       const result = await apiClient.startTutorSession({
         question,
         pdfId: graphId,
-        learnerId: normalizedLearnerId || undefined,
         mode: 'interactive',
-        domainStrict,
-        context,
+        context: { learning_level: 'intermediate' },
         courseTypeStrategy: 'auto',
       });
+      updateStageStatus(1, 'done', '学习目标理解完成。');
+
+      updateStageStatus(2, 'active', '正在规划课程结构...');
+      updateStageStatus(2, 'done', `已规划 ${Math.max(result.plan.steps.length, 1)} 个学习阶段。`);
+
+      updateStageStatus(3, 'active', '正在生成第一节课程内容...');
       const hydrated = await apiClient.nextTutorSessionStep(result.sessionId);
       setSession(hydrated);
-      setLatestTrackedStepKey(null);
       setResponseText('');
-      await refreshLearningProgress(hydrated);
+      updateStageStatus(3, 'done', '课程已准备好，可以开始学习。');
+      appendSubtitleLine(-1, '全部阶段已完成。');
     } catch (err) {
       setError((err as Error).message);
+      updateStageStatus(activeStageRef.current, 'error', '当前阶段执行失败，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -189,7 +199,6 @@ export function TutorWorkspace() {
       setSession(result);
       setOverrideArtifact(null);
       setResponseText('');
-      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -208,7 +217,6 @@ export function TutorWorkspace() {
       setSession(result);
       setOverrideArtifact(null);
       setResponseText('');
-      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -227,7 +235,6 @@ export function TutorWorkspace() {
       setSession(result);
       setOverrideArtifact(null);
       setResponseText('');
-      await refreshLearningProgress(result);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -248,39 +255,6 @@ export function TutorWorkspace() {
       });
       setSession(result);
       setResponseText('');
-      await refreshLearningProgress(result);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const submitLearningFeedback = async () => {
-    if (!session || !normalizedLearnerId) {
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      const conceptId = activeStep?.relatedTopics?.[0];
-      const result = await apiClient.submitLearningFeedback({
-        learnerId: normalizedLearnerId,
-        graphId: graphIdForView,
-        sessionId: session.sessionId,
-        stepId: activeStep?.id,
-        conceptId,
-        rating: feedbackRating,
-        difficulty: feedbackDifficulty,
-        comment: feedbackComment.trim() || undefined,
-        metadata: {
-          stepType: activeStep?.type,
-          source: 'tutor_workspace',
-        },
-      });
-      setLearningProgress(result.progress);
-      setFeedbackComment('');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -292,59 +266,13 @@ export function TutorWorkspace() {
     setOverrideArtifact(null);
   }, [contentId]);
 
-  useEffect(() => {
-    if (!session || !activeStep || !normalizedLearnerId) {
-      return;
-    }
-
-    const stepTrackingKey = `${normalizedLearnerId}:${session.sessionId}:${activeStep.id}`;
-    if (stepTrackingKey === latestTrackedStepKey) {
-      return;
-    }
-    setLatestTrackedStepKey(stepTrackingKey);
-
-    const conceptId = activeStep.relatedTopics?.[0];
-    void apiClient
-      .trackLearningEvent({
-        learnerId: normalizedLearnerId,
-        graphId: graphIdForView,
-        sessionId: session.sessionId,
-        stepId: activeStep.id,
-        conceptId,
-        eventType: 'content_viewed',
-        metadata: {
-          source: 'tutor_workspace',
-          stepType: activeStep.type,
-        },
-      })
-      .then((result) => {
-        setLearningProgress(result.progress);
-      })
-      .catch(() => {
-        // Non-blocking telemetry path.
-      });
-  }, [
-    activeStep,
-    graphIdForView,
-    latestTrackedStepKey,
-    normalizedLearnerId,
-    session,
-  ]);
-
-  useEffect(() => {
-    if (!normalizedLearnerId || session) {
-      return;
-    }
-    void refreshLearningProgress(null, graphId);
-  }, [graphId, normalizedLearnerId, session]);
-
   const actionDisabled = loading || !session;
 
   return (
     <div className="tutor-page">
       <header className="tutor-page__hero">
         <h2 className="tutor-page__title">AI 导师</h2>
-        <p className="tutor-page__subtitle">拿到图谱后，只需提问一次，系统会自动判别问题类型并生成课程内容。</p>
+        <p className="tutor-page__subtitle">输入你的学习问题，系统会自动生成可学习的课程步骤，并实时展示生成进度。</p>
       </header>
 
       <form className="tutor-page__start" onSubmit={startSession}>
@@ -358,72 +286,17 @@ export function TutorWorkspace() {
         <button className="tutor-page__button" type="submit" disabled={loading || graphDomainMismatchBlocked}>
           {loading ? '处理中...' : '生成课程'}
         </button>
-        <div className="tutor-page__helper">当前图谱: {graphId || '未选择'}</div>
-        {graphDomainCompatibility && (
-          <div
-            className={
-              graphDomainCompatibility.compatible
-                ? 'tutor-page__domain-status tutor-page__domain-status--ok'
-                : 'tutor-page__domain-status tutor-page__domain-status--warn'
-            }
-          >
-            <strong>图谱领域检查:</strong>
-            {' '}期望 {graphDomainCompatibility.expectedDomain}
-            {' '}| 检测 {graphDomainCompatibility.detectedDomain}
-            {' '}| 兼容 {graphDomainCompatibility.compatible ? '是' : '否'}
-            {typeof graphDomainCompatibility.signalCount === 'number' && (
-              <>
-                {' '}| 信号 {graphDomainCompatibility.signalCount}
-              </>
-            )}
+        <div className="tutor-page__helper">当前资料编号: {graphId || '未选择'}</div>
+        {graphDomainCompatibility?.compatible && (
+          <div className="tutor-page__domain-status tutor-page__domain-status--ok">
+            资料检查通过：当前上传 PDF 与控制理论课程方向相关。
           </div>
         )}
         {graphDomainMismatch && (
-          <div className="tutor-page__error">
-            {domainStrict
-              ? '当前图谱与系统导师领域不一致。Strict 模式下请先切换到匹配图谱，再开始提问。'
-              : '当前图谱与系统导师领域不一致。非 Strict 模式下系统会先用图谱与原文前几页做领域识别，再自动对齐提示词。'}
+          <div className="tutor-page__domain-status tutor-page__domain-status--warn">
+            当前你上传的 PDF 与预设的控制理论课程不相关，请上传控制理论相关资料后再生成课程。
           </div>
         )}
-
-        <details className="tutor-page__advanced">
-          <summary>高级设置（可选）</summary>
-          <div className="tutor-page__advanced-body">
-            <input
-              className="tutor-page__input"
-              value={graphId}
-              onChange={(event) => setGraphId(event.target.value)}
-              placeholder="graph id"
-              required
-            />
-            <input
-              className="tutor-page__input"
-              value={learnerId}
-              onChange={(event) => setLearnerId(event.target.value)}
-              placeholder="learner id (用于学习闭环)"
-            />
-            <label className="tutor-page__toggle-row" htmlFor="domain-strict-toggle">
-              <input
-                id="domain-strict-toggle"
-                type="checkbox"
-                checked={domainStrict}
-                onChange={(event) => setDomainStrict(event.target.checked)}
-              />
-              <span>
-                strict 领域门控
-                {domainStrict ? '（不匹配即拦截）' : '（不匹配时自动对齐领域提示词）'}
-              </span>
-            </label>
-            <button
-              className="tutor-page__button tutor-page__button--ghost"
-              type="button"
-              disabled={!normalizedLearnerId || loading}
-              onClick={() => void refreshLearningProgress(session)}
-            >
-              刷新学习进度
-            </button>
-          </div>
-        </details>
       </form>
 
       {error && <div className="tutor-page__error">请求失败: {error}</div>}
@@ -434,6 +307,37 @@ export function TutorWorkspace() {
             <h3>{activeStep ? `当前步骤: ${activeStep.title}` : '会话展示区'}</h3>
           </div>
           <div className="tutor-page__panel-body">
+            <div className="tutor-page__progress-board">
+              <div className="tutor-page__progress-head">
+                <strong>课程生成进度</strong>
+                <span>{completedStageCount}/{generationStages.length}</span>
+              </div>
+              <div className="tutor-page__progress-now">
+                {loading && activeStage
+                  ? `当前阶段：${activeStage.label}`
+                  : session
+                    ? '课程准备完成，可开始学习或继续下一步。'
+                    : '点击“生成课程”后，这里会实时显示后台进度。'}
+              </div>
+              <div className="tutor-page__subtitle-feed" ref={subtitleFeedRef}>
+                {subtitleLines.length > 0 ? subtitleLines.map((line, index) => (
+                  <div key={`${line}-${index}`} className="tutor-page__subtitle-line">{line}</div>
+                )) : (
+                  <div className="tutor-page__subtitle-empty">等待开始生成课程...</div>
+                )}
+              </div>
+              <div className="tutor-page__stage-track">
+                {generationStages.map((stage) => (
+                  <span
+                    key={stage.label}
+                    className={`tutor-page__stage-chip tutor-page__stage-chip--${stage.status}`}
+                  >
+                    {stage.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
             <ContentRenderer
               artifact={displayedArtifact}
               loading={contentLoading}
@@ -524,15 +428,15 @@ export function TutorWorkspace() {
                           onClick={() => void jumpToStep(step)}
                         >
                           <p className="tutor-page__step-title">{step.title}</p>
-                          <p className="tutor-page__step-meta">
-                            {step.type} | artifact: {step.content.contentArtifactStatus ?? 'none'}
-                          </p>
+                          <p className="tutor-page__step-meta">点击查看该学习步骤</p>
                         </button>
                       );
                     })}
                   </div>
 
-                  <div className="tutor-page__status">状态: {session.status} | 步骤索引: {session.currentStepIndex}</div>
+                  <div className="tutor-page__status">
+                    学习进度：第 {Math.max(session.currentStepIndex + 1, 0)} / {session.plan.steps.length} 步
+                  </div>
 
                   <div className="tutor-page__messages">
                     {session.messages.slice(-6).map((message, index) => (
@@ -544,82 +448,8 @@ export function TutorWorkspace() {
                   </div>
                 </>
               ) : (
-                <div className="tutor-page__status">启动会话后，这里会显示 step plan 和会话消息。</div>
+                <div className="tutor-page__status">点击“生成课程”后，这里会显示课程步骤和会话记录。</div>
               )}
-
-              <div className="tutor-page__learning">
-                <h4>学习闭环状态</h4>
-                {learningProgress ? (
-                  <>
-                    <div className="tutor-page__learning-metrics">
-                      <span>event: {learningProgress.eventCount}</span>
-                      <span>feedback: {learningProgress.feedbackCount}</span>
-                      <span>avg rating: {learningProgress.averageFeedbackRating ?? '-'}</span>
-                    </div>
-                    <div className="tutor-page__badge-list">
-                      {pendingReviewConcepts.map((conceptId) => (
-                        <span key={conceptId} className="tutor-page__badge tutor-page__badge--warn">
-                          待复习 {conceptId}
-                        </span>
-                      ))}
-                      {learningProgress.masteredConceptIds.map((conceptId) => (
-                        <span key={conceptId} className="tutor-page__badge tutor-page__badge--ok">
-                          已掌握 {conceptId}
-                        </span>
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <p className="tutor-page__learning-empty">
-                    输入 learner id 后可查看学习状态。当前会话仍可运行，但不会记录个性化进度。
-                  </p>
-                )}
-
-                <div className="tutor-page__feedback-form">
-                  <h5>本步骤反馈</h5>
-                  <div className="tutor-page__feedback-row">
-                    <label htmlFor="feedback-rating">评分</label>
-                    <select
-                      id="feedback-rating"
-                      className="tutor-page__select tutor-page__select--compact"
-                      value={feedbackRating}
-                      onChange={(event) => setFeedbackRating(Number(event.target.value))}
-                    >
-                      <option value={5}>5</option>
-                      <option value={4}>4</option>
-                      <option value={3}>3</option>
-                      <option value={2}>2</option>
-                      <option value={1}>1</option>
-                    </select>
-                    <label htmlFor="feedback-difficulty">难度</label>
-                    <select
-                      id="feedback-difficulty"
-                      className="tutor-page__select tutor-page__select--compact"
-                      value={feedbackDifficulty}
-                      onChange={(event) => setFeedbackDifficulty(event.target.value as FeedbackDifficulty)}
-                    >
-                      <option value="too_easy">too_easy</option>
-                      <option value="appropriate">appropriate</option>
-                      <option value="too_hard">too_hard</option>
-                    </select>
-                  </div>
-                  <textarea
-                    className="tutor-page__textarea"
-                    rows={3}
-                    value={feedbackComment}
-                    onChange={(event) => setFeedbackComment(event.target.value)}
-                    placeholder="可选：描述你觉得难/易的原因"
-                  />
-                  <button
-                    className="tutor-page__button tutor-page__button--ghost"
-                    type="button"
-                    disabled={!session || !normalizedLearnerId || loading}
-                    onClick={submitLearningFeedback}
-                  >
-                    提交学习反馈
-                  </button>
-                </div>
-              </div>
             </div>
           </section>
 

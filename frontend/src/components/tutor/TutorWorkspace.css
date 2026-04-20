@@ -78,11 +78,13 @@
 }
 
 .tutor-page__toggle-row {
+  grid-column: 1 / -1;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.86rem;
   color: var(--text-secondary);
+  padding: 0.15rem 0;
 }
 
 .tutor-page__toggle-row input[type='checkbox'] {
@@ -168,6 +170,95 @@
 
 .tutor-page__panel-body {
   padding: 0.9rem;
+}
+
+.tutor-page__progress-board {
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--border-cream);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.68rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.tutor-page__progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.tutor-page__progress-now {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.tutor-page__subtitle-feed {
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px dashed var(--border-cream);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.5rem 0.55rem;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.tutor-page__subtitle-line {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  animation: subtitle-roll-in 0.28s ease-out;
+}
+
+.tutor-page__subtitle-empty {
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+}
+
+.tutor-page__stage-track {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.tutor-page__stage-chip {
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border-cream);
+  color: var(--text-secondary);
+  background: #fff;
+}
+
+.tutor-page__stage-chip--active {
+  border-color: #9e6329;
+  background: #fff0dd;
+  color: #8a520f;
+}
+
+.tutor-page__stage-chip--done {
+  border-color: #acd7b0;
+  background: #e9f7ea;
+  color: #1d5b25;
+}
+
+.tutor-page__stage-chip--error {
+  border-color: #e0a4a4;
+  background: #fdecec;
+  color: #8a2f2f;
+}
+
+@keyframes subtitle-roll-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .tutor-page__step-list {
