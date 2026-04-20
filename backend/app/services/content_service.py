@@ -21,6 +21,12 @@ from app.db.redis import close_redis_client, get_redis_client
 from app.schemas.content import ContentArtifact, ContentArtifactStatus, ContentGenerationParams
 from app.schemas.tutor import ContentArtifactType, ContentRequestResponseMode, CourseType, TeachingContentRequest
 
+# Review service imported lazily to avoid a circular import; the TYPE_CHECKING
+# guard keeps mypy happy without a hard dependency at module load time.
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.services.review_service import ContentReviewService
+
 
 class ContentStore(Protocol):
     """Storage contract for content artifacts and cache mappings."""
@@ -114,11 +120,15 @@ class ContentService:
         *,
         image_fetcher: Callable[[str, int], tuple[str, bytes]] | None = None,
         image_real_enabled: bool = True,
+        review_service: "ContentReviewService | None" = None,
     ) -> None:
         self.store = store
         self.backend_name = backend_name
         self.image_fetcher = image_fetcher or self._fetch_real_image
         self.image_real_enabled = image_real_enabled
+        # Optional review agent — injected at construction or via get_content_service().
+        # Set to None to disable the review gate (useful in tests).
+        self._review_service: "ContentReviewService | None" = review_service
 
     def generate_content(
         self,
@@ -128,6 +138,8 @@ class ContentService:
         interactive_mode: str | None = None,
         generation_params: ContentGenerationParams | None = None,
     ) -> tuple[ContentArtifact, bool]:
+        from app.services.review_service import review_enabled, max_retries
+
         params = generation_params or ContentGenerationParams()
         cache_key = self.build_cache_key(request, params)
         if not force_regenerate:
@@ -141,8 +153,50 @@ class ContentService:
             interactive_mode=interactive_mode,
             generation_params=params,
         )
+
+        # ── Content Review Gate ──────────────────────────────────────────────
+        # When review is enabled and a review_service is wired in, evaluate the
+        # artifact against the knowledge graph + source material.  If the score
+        # falls below the pass threshold, regenerate up to max_retries times
+        # with the review feedback injected into the LLM prompt.
+        if review_enabled() and self._review_service is not None:
+            review_result = self._review_service.review_artifact(artifact, request)
+            _retries = 0
+            _max = max_retries()
+            while not review_result.passed and _retries < _max:
+                _retries += 1
+                feedback = self._format_review_feedback(review_result)
+                artifact = self._build_artifact(
+                    request,
+                    cache_key=cache_key,
+                    interactive_mode=interactive_mode,
+                    generation_params=params,
+                    review_feedback=feedback,
+                )
+                review_result = self._review_service.review_artifact(artifact, request)
+
+            # Store review result inside the artifact metadata
+            updated_meta = dict(artifact.metadata)
+            updated_meta["review"] = review_result.model_dump(mode="json")
+            artifact = artifact.model_copy(update={"metadata": updated_meta})
+        # ── End Review Gate ─────────────────────────────────────────────────
+
         self.store.save(artifact.model_dump(mode="json"))
         return artifact, False
+
+    @staticmethod
+    def _format_review_feedback(review_result: Any) -> str:
+        """Render reviewer findings as a concise feedback string for the LLM."""
+        lines = ["以下是内容审核 Agent 的反馈，请在重新生成时针对性修正："]
+        for conflict in (review_result.conflicts or []):
+            severity = getattr(conflict, "severity", "warning")
+            if hasattr(severity, "value"):
+                severity = severity.value
+            lines.append(f"- [{severity.upper()}] {conflict.description}（参考原文: {conflict.reference[:80]}）")
+        if review_result.qualityNotes:
+            lines.append(f"总体评估：{review_result.qualityNotes}")
+        lines.append(f"当前得分：{review_result.score}/100，需达到 85 分以上方可通过。")
+        return "\n".join(lines)
 
     def get_artifact(self, artifact_id: str) -> ContentArtifact | None:
         payload = self.store.get(artifact_id)
@@ -167,6 +221,7 @@ class ContentService:
         cache_key: str,
         interactive_mode: str | None,
         generation_params: ContentGenerationParams,
+        review_feedback: str | None = None,
     ) -> ContentArtifact:
         now = datetime.now(timezone.utc).isoformat()
         artifact_id = f"content-{uuid.uuid4()}"
@@ -182,7 +237,7 @@ class ContentService:
         }
         markdown = None
         if ContentArtifactType.MARKDOWN in requested_types:
-            markdown, markdown_meta = self._generate_markdown(request, generation_params)
+            markdown, markdown_meta = self._generate_markdown(request, generation_params, review_feedback=review_feedback)
         mermaid = self._generate_mermaid(request) if ContentArtifactType.MERMAID in requested_types else None
         latex = self._generate_latex(request) if ContentArtifactType.LATEX in requested_types else None
         image = None
@@ -251,10 +306,12 @@ class ContentService:
         self,
         request: TeachingContentRequest,
         generation_params: ContentGenerationParams,
+        *,
+        review_feedback: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
         # Always attempt LLM first; template is only used as a last resort when LLM
         # is not configured or the call fails.
-        llm_text, llm_meta = self._generate_markdown_with_llm(request, generation_params)
+        llm_text, llm_meta = self._generate_markdown_with_llm(request, generation_params, review_feedback=review_feedback)
         if llm_text:
             return llm_text, {
                 "source": "llm",
@@ -266,6 +323,7 @@ class ContentService:
 
         # LLM not configured or failed — fall back to template.
         # If there truly is no grounding signal at all, use the insufficient-grounding message.
+        _ = review_feedback  # Not used in template path; consumed only by LLM path.
         fallback_reason = llm_meta.get("error") or "llm_unavailable"
         if not self._is_request_grounded(request):
             return self._generate_insufficient_grounding_markdown(request), {
@@ -366,6 +424,8 @@ class ContentService:
         self,
         request: TeachingContentRequest,
         generation_params: ContentGenerationParams,
+        *,
+        review_feedback: str | None = None,
     ) -> tuple[str | None, dict[str, Any]]:
         api_key = (
             os.getenv("CONTENT_LLM_API_KEY")
@@ -543,6 +603,13 @@ class ContentService:
                 )
 
         user_prompt = _ctx + _instruction
+        # Inject review feedback so the LLM can address the reviewer's findings.
+        if review_feedback:
+            user_prompt += (
+                "\n\n=== 内容审核反馈（请针对以下问题进行修正后重新生成）===\n"
+                + review_feedback
+                + "\n=== 请在以上要求的格式下重新生成改进后的内容 ==="
+            )
 
         try:
             if "/anthropic" in base_url.lower():
@@ -858,8 +925,13 @@ class FailoverContentService(ContentService):
         healthcheck: Callable[[], None],
         primary_backend_name: str = "redis",
         fallback_backend_name: str = "memory-fallback",
+        review_service: "ContentReviewService | None" = None,
     ) -> None:
-        super().__init__(store=primary_store, backend_name=primary_backend_name)
+        super().__init__(
+            store=primary_store,
+            backend_name=primary_backend_name,
+            review_service=review_service,
+        )
         self.primary_store = primary_store
         self.fallback_store = fallback_store
         self.healthcheck = healthcheck
@@ -927,10 +999,18 @@ def get_content_service() -> ContentService:
         return _content_service
 
     client = get_redis_client()
+
+    # Wire the review service when CONTENT_REVIEW_ENABLED is set.
+    _review_svc = None
+    if os.getenv("CONTENT_REVIEW_ENABLED", "false").lower() in ("1", "true", "yes"):
+        from app.services.review_service import get_review_service
+        _review_svc = get_review_service()
+
     service = FailoverContentService(
         primary_store=RedisContentStore(client),
         fallback_store=_fallback_store,
         healthcheck=client.ping,
+        review_service=_review_svc,
     )
     try:
         client.ping()

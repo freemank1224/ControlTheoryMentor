@@ -10,8 +10,10 @@ from app.schemas.content import (
     ContentInteractiveRequest,
     ContentTypedPayloadResponse,
 )
+from app.schemas.review import ContentReviewRequest, ContentReviewResponse
 from app.schemas.tutor import ContentArtifactType
 from app.services.content_service import ContentService, get_content_service
+from app.services.review_service import ContentReviewService, get_review_service
 
 router = APIRouter(prefix="/content", tags=["Content"])
 
@@ -111,3 +113,87 @@ async def get_content_latex(
             "store": artifact.metadata.get("store"),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Review endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/{artifact_id}/review", response_model=ContentReviewResponse)
+async def review_content_artifact(
+    artifact_id: str,
+    body: ContentReviewRequest,
+    content_service: ContentService = Depends(get_content_service),
+    review_service: ContentReviewService = Depends(get_review_service),
+):
+    """Trigger an on-demand quality review for an existing content artifact.
+
+    The review agent compares the artifact's generated content against the
+    knowledge graph nodes and source-document chunks identified by *graphId*.
+    Returns a scored review result with conflict/consistency annotations.
+    A score ≥ 85 results in recommendation='pass'; below that is 'revise'.
+    """
+
+    artifact = content_service.get_artifact(artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Content artifact not found")
+
+    # If a cached review is already stored in metadata and forceReview is False, return it.
+    if not body.forceReview:
+        cached_review = artifact.metadata.get("review")
+        if cached_review:
+            from app.schemas.review import ContentReviewResult
+            try:
+                return ContentReviewResponse(
+                    result=ContentReviewResult.model_validate(cached_review),
+                    cached=True,
+                )
+            except Exception:
+                pass  # Malformed cache — fall through to re-review
+
+    # Build a minimal TeachingContentRequest from what the artifact already knows
+    source_request = artifact.source
+    if body.graphId:
+        source_request = source_request.model_copy(update={"graphId": body.graphId})
+
+    result = review_service.review_artifact(artifact, source_request)
+
+    # Persist the review result back into the artifact metadata
+    updated_meta = dict(artifact.metadata)
+    updated_meta["review"] = result.model_dump(mode="json")
+    updated_artifact = artifact.model_copy(update={"metadata": updated_meta})
+    content_service.store.save(updated_artifact.model_dump(mode="json"))
+
+    return ContentReviewResponse(result=result, cached=False)
+
+
+@router.get("/{artifact_id}/review", response_model=ContentReviewResponse)
+async def get_content_review(
+    artifact_id: str,
+    content_service: ContentService = Depends(get_content_service),
+):
+    """Return the most recent review result stored on an artifact (if any).
+
+    Returns 404 if the artifact has not been reviewed yet.  Use
+    POST /{artifact_id}/review to trigger a review.
+    """
+
+    artifact = content_service.get_artifact(artifact_id)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Content artifact not found")
+
+    cached_review = artifact.metadata.get("review")
+    if not cached_review:
+        raise HTTPException(
+            status_code=404,
+            detail="No review result found for this artifact. POST to /{artifact_id}/review to trigger one.",
+        )
+
+    from app.schemas.review import ContentReviewResult
+    try:
+        return ContentReviewResponse(
+            result=ContentReviewResult.model_validate(cached_review),
+            cached=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Malformed review cache: {exc}") from exc
